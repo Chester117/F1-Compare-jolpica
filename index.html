@@ -1,0 +1,42 @@
+<head>
+    <meta charset="UTF-8">
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="https://code.highcharts.com/modules/exporting.js"></script>
+    <script src="https://code.highcharts.com/modules/offline-exporting.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simple-statistics/7.8.3/simple-statistics.min.js"></script>
+    <script src="main.js"></script>
+    <script src="QualifyingTrendGraph.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="banner">
+        <div class="tab-button active" data-tab="qualifying" onclick="switchTab('qualifying')">Qualifying Comparison</div>
+        <div class="tab-button" data-tab="history" onclick="switchTab('history')">Battle History</div>
+    </div>
+    
+    <div id="qualifying-content">
+        <div class="flex-container">
+            <h1 class="flex-title">F1队友排位赛对比计算1</h1>
+        </div>
+        <div class="flex-container-options">
+            <select class="selector" id="seasonList" name="seasonList"></select>
+            <select class="selector" id="constructorList" name="constructorList"></select>
+            <button class="selector" id="go">Go</button>
+        </div>
+        <div class="flex-container-table" id="tables"></div>
+    </div>
+    
+    <div id="history-content" style="display: none;">
+        <div class="flex-container">
+            <h1 class="flex-title">F1队友历史对比</h1>
+        </div>
+        <div class="flex-container-options">
+            <select class="selector" id="startYearList" name="startYearList"></select>
+            <select class="selector" id="endYearList" name="endYearList"></select>
+            <select class="selector" id="historyConstructorList" name="historyConstructorList"></select>
+            <button class="selector" id="historyGo">Go</button>
+        </div>
+        <div class="flex-container-table" id="historyTable"></div>
+    </div>
+</body>
