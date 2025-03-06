@@ -42,18 +42,21 @@
     </div>
     
     <script>
-        // Redefine switchTab function to make it use the one from history.js if necessary
+        // Redefine  function to make it use the one from history.js if necessary
         function switchTab(tab) {
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('active');
+            });
+            
+            document.getElementById('qualifying-content').style.display = tab === 'qualifying' ? 'block' : 'none';
+            document.getElementById('history-content').style.display = tab === 'history' ? 'block' : 'none';
+            document.querySelector(`.tab-button[data-tab="${tab}"]`).classList.add('active');
+            
+            // 如果切换到历史标签，确保初始化
             if (tab === 'history') {
-                switchTabHistory(tab);
-            } else {
-                document.querySelectorAll('.tab-button').forEach(button => {
-                    button.classList.remove('active');
-                });
-                
-                document.getElementById('qualifying-content').style.display = tab === 'qualifying' ? 'block' : 'none';
-                document.getElementById('history-content').style.display = tab === 'history' ? 'block' : 'none';
-                document.querySelector(`.tab-button[data-tab="${tab}"]`).classList.add('active');
+                if (typeof initHistoryTab === 'function') {
+                    initHistoryTab();
+                }
             }
         }
     </script>
