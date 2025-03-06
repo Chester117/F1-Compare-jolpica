@@ -4,6 +4,7 @@
     <script src="https://code.highcharts.com/modules/exporting.js"></script>
     <script src="https://code.highcharts.com/modules/offline-exporting.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/simple-statistics/7.8.3/simple-statistics.min.js"></script>
+    <script src="utils.js"></script>  <!-- 添加通用工具函数 -->
     <script src="main.js"></script>
     <script src="history.js"></script>
     <script src="QualifyingTrendGraph.js"></script>
@@ -42,21 +43,18 @@
     </div>
     
     <script>
-        // Redefine  function to make it use the one from history.js if necessary
+        // Redefine switchTab function to make it use the one from history.js if necessary
         function switchTab(tab) {
-            document.querySelectorAll('.tab-button').forEach(button => {
-                button.classList.remove('active');
-            });
-            
-            document.getElementById('qualifying-content').style.display = tab === 'qualifying' ? 'block' : 'none';
-            document.getElementById('history-content').style.display = tab === 'history' ? 'block' : 'none';
-            document.querySelector(`.tab-button[data-tab="${tab}"]`).classList.add('active');
-            
-            // 如果切换到历史标签，确保初始化
             if (tab === 'history') {
-                if (typeof initHistoryTab === 'function') {
-                    initHistoryTab();
-                }
+                switchTabHistory(tab);
+            } else {
+                document.querySelectorAll('.tab-button').forEach(button => {
+                    button.classList.remove('active');
+                });
+                
+                document.getElementById('qualifying-content').style.display = tab === 'qualifying' ? 'block' : 'none';
+                document.getElementById('history-content').style.display = tab === 'history' ? 'block' : 'none';
+                document.querySelector(`.tab-button[data-tab="${tab}"]`).classList.add('active');
             }
         }
     </script>
