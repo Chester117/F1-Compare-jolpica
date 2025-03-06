@@ -1,99 +1,20 @@
-async function testJolpicaApi() {
-    console.log("Testing Jolpica API...");
-    
-    try {
-        const response = await fetch("https://jolpica-f1.com/api/2023/constructors.json");
-        if (!response.ok) {
-            console.error("API test failed:", response.statusText);
-        } else {
-            const data = await response.json();
-            console.log("API test successful:", data);
-        }
-    } catch (e) {
-        console.error("API test exception:", e);
-    }
-}
-
-// Call this before main() in your load event listener
+// 页面加载时初始化
 window.addEventListener("load", () => {
-    testJolpicaApi();
+    F1Utils.testJolpicaApi();
     main();
 });
 
-async function fetchData(url){
-    try {
-        let response = await fetch(url, {
-            headers: {
-                'Accept': 'application/json'
-            },
-            mode: 'cors'
-        });
-
-        if (!response.ok) {
-            console.error(`Error fetching ${url}: ${response.statusText}`);
-            return undefined;
-        } else {
-            let json = await response.json();
-            return json;
-        }
-    } catch (e) {
-        console.error(`Exception fetching ${url}:`, e);
-        return undefined;
-    }
-}
-
-async function getSeasons(){
-    return fetchData("https://api.jolpi.ca/ergast/f1/seasons.json?offset=44&limit=100");
-}
-
-async function getConstructors(year){
-    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/constructors.json`);
-}
-
-async function getQualifying(year, constructorId){
-    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/constructors/${constructorId}/qualifying.json?limit=60`);
-}
-
-// Update constructors list
-async function selectOnChange(event){
+// 更新车队列表
+async function selectOnChange(event) {
     const year = event.target.value;
     const selectedConstructor = document.getElementById("constructorList").value;
-    let results = await getConstructors(year);
-    if(results){
+    let results = await F1Utils.getConstructors(year);
+    if (results) {
         fillConstructorsList(results, selectedConstructor);
     }
 }
 
-// Convert milliseconds to minutes,seconds,milliseconds
-function millisecondsToStruct(time){
-    const newTime = {};
-    newTime.isNegative = time < 0 ? true : false;
-    time = Math.abs(time);
-    newTime.minutes = Math.floor(time/60000);
-    time = time % 60000;
-    newTime.seconds = Math.floor(time/1000);
-    newTime.milliseconds = Math.floor(time % 1000);
-    return newTime;
-}
-
-// Convert time string into milliseconds
-function convertTimeString(time){
-    let milliseconds = 0;
-    const tkns = time.split(":");
-    if(tkns.length === 2){
-        milliseconds += (parseInt(tkns[0]) * 60000);
-        const tkns2 = tkns[1].split(".");
-        milliseconds += parseInt(tkns2[0]) * 1000;
-        milliseconds += parseInt(tkns2[1]);
-        return milliseconds
-    }else{
-        const tkns2 = tkns[0].split(".");
-        milliseconds += parseInt(tkns2[0]) * 1000;
-        milliseconds += parseInt(tkns2[1]);
-        return milliseconds
-    }
-}
-
+// 创建车手对比表格
 function createTable(driver1, driver2) {
     const div = document.getElementById("tables");
     div.style.display = "flex";
@@ -111,7 +32,7 @@ function createTable(driver1, driver2) {
     driverHeader.textContent = `${driver1.name} vs ${driver2.name}`;
     div.appendChild(driverHeader);
     
-    // Create a wrapper div for better control of table and graph layout
+    // 创建包装器div用于更好地控制表格和图表布局
     const contentWrapper = document.createElement("div");
     contentWrapper.className = "table-graph-wrapper";
     contentWrapper.style.width = "100%";
@@ -173,124 +94,34 @@ function createTable(driver1, driver2) {
     };
 }
 
-//end of creat table
-function newDriver(d) {
-    return {
-        name: `${d.Driver.givenName} ${d.Driver.familyName}`,
-        id: d.Driver.driverId,
-        ref: d,
-    }
-}
-
-function bestTime(driver) {
-    let times = {
-        Q1: driver.ref.Q1 || null,
-        Q2: driver.ref.Q2 || null,
-        Q3: driver.ref.Q3 || null
-    };
-    
-    return times;
-}
-
-function newTd(text, bold, styleOptions){
-    let td = document.createElement("td");
-    if(bold){
-        let bold = document.createElement("strong");
-        let textNode = document.createTextNode(text);
-        bold.appendChild(textNode);
-        td.appendChild(bold);
-    }
-    else{
-        td.appendChild(document.createTextNode(text));
-    }
-    if(styleOptions){
-        for (let key of Object.keys(styleOptions)) {
-            td.style[key] = styleOptions[key];
-        }
-    }
-    
-    return td;
-}
-
-
-function displayQualyScore(currentTable){
+// 显示排位赛得分
+function displayQualyScore(currentTable) {
     const tr = document.createElement("tr");
     currentTable.table.appendChild(tr);
 
-    tr.appendChild(newTd("Qualifying score", true, { textAlign: "left" })); 
+    tr.appendChild(F1Utils.newTd("Qualifying score", true, { textAlign: "left" })); 
+    tr.appendChild(F1Utils.newTd("", false));
+    tr.appendChild(F1Utils.newTd("", false));
 
-    tr.appendChild(newTd("", false));
-    tr.appendChild(newTd("", false));
-
-
-    const tdText = `${currentTable.driver1Better} - ${currentTable.raceCount - currentTable.driver1Better}`
-    let tdColour = "#ffc478"
+    const tdText = `${currentTable.driver1Better} - ${currentTable.raceCount - currentTable.driver1Better}`;
+    let tdColour = "#ffc478";
     if (currentTable.driver1Better > (currentTable.raceCount - currentTable.driver1Better)) {
         tdColour = "#85FF78";
     }
     else if (currentTable.driver1Better < (currentTable.raceCount - currentTable.driver1Better)) {
         tdColour = "#FF7878";
     }
-    tr.appendChild(newTd(tdText, true, { backgroundColor: tdColour}));
+    tr.appendChild(F1Utils.newTd(tdText, true, { backgroundColor: tdColour}));
 }
 
-function compareDriverTimes(driver1Times, driver2Times) {
-    // Find the latest session where both drivers set a time
-    let sessionUsed = null;
-    let d1Time = null;
-    let d2Time = null;
-
-    if (driver1Times.Q3 && driver2Times.Q3) {
-        sessionUsed = "Q3";
-        d1Time = driver1Times.Q3;
-        d2Time = driver2Times.Q3;
-    } else if (driver1Times.Q2 && driver2Times.Q2) {
-        sessionUsed = "Q2";
-        d1Time = driver1Times.Q2;
-        d2Time = driver2Times.Q2;
-    } else if (driver1Times.Q1 && driver2Times.Q1) {
-        sessionUsed = "Q1";
-        d1Time = driver1Times.Q1;
-        d2Time = driver2Times.Q1;
-    }
-
-    return {
-        sessionUsed,
-        d1Time,
-        d2Time
-    };
-}
-
-function calculateMedian(numbers) {
-    if (numbers.length === 0) return 0;
-    
-    const sorted = numbers.sort((a, b) => a - b);
-    const middle = Math.floor(sorted.length / 2);
-
-    if (sorted.length % 2 === 0) {
-        return (sorted[middle - 1] + sorted[middle]) / 2;
-    }
-
-    return sorted[middle];
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////DISPLAY MEDIAN RESULTS////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+// 显示统计结果
 function displayMedianResults(currentTable) {
-    const calculateAverage = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
-    
     const summaryData = [
         {
             label: "Average time difference",
             getValue: () => {
                 if (currentTable.timeDifferences.length >= 1) {
-                    const avgTime = millisecondsToStruct(calculateAverage(currentTable.timeDifferences));
+                    const avgTime = F1Utils.millisecondsToStruct(F1Utils.calculateAverage(currentTable.timeDifferences));
                     const ms = avgTime.milliseconds.toString().padStart(3, '0');
                     return {
                         text: `${avgTime.isNegative ? "-" : "+"}${avgTime.minutes > 0 ? avgTime.minutes + ":" : ""}${avgTime.seconds}.${ms}`
@@ -303,7 +134,7 @@ function displayMedianResults(currentTable) {
             label: "Median time difference",
             getValue: () => {
                 if (currentTable.timeDifferences.length >= 1) {
-                    const medianTime = millisecondsToStruct(calculateMedian(currentTable.timeDifferences));
+                    const medianTime = F1Utils.millisecondsToStruct(F1Utils.calculateMedian(currentTable.timeDifferences));
                     const ms = medianTime.milliseconds.toString().padStart(3, '0');
                     return {
                         text: `${medianTime.isNegative ? "-" : "+"}${medianTime.minutes > 0 ? medianTime.minutes + ":" : ""}${medianTime.seconds}.${ms}`
@@ -316,7 +147,7 @@ function displayMedianResults(currentTable) {
             label: "Average % difference",
             getValue: () => {
                 if (currentTable.percentageDifferences.length >= 1) {
-                    const avgPercentage = calculateAverage(currentTable.percentageDifferences);
+                    const avgPercentage = F1Utils.calculateAverage(currentTable.percentageDifferences);
                     const formattedPercentage = Number(Math.abs(avgPercentage)).toPrecision(3);
                     return {
                         text: `${avgPercentage > 0 ? "+" : "-"}${formattedPercentage}%`
@@ -329,7 +160,7 @@ function displayMedianResults(currentTable) {
             label: "Median % difference",
             getValue: () => {
                 if (currentTable.percentageDifferences.length >= 1) {
-                    const medianPercentage = calculateMedian(currentTable.percentageDifferences);
+                    const medianPercentage = F1Utils.calculateMedian(currentTable.percentageDifferences);
                     const formattedPercentage = Number(Math.abs(medianPercentage)).toPrecision(3);
                     return {
                         text: `${medianPercentage > 0 ? "+" : "-"}${formattedPercentage}%`
@@ -344,7 +175,7 @@ function displayMedianResults(currentTable) {
         const tr = document.createElement("tr");
         currentTable.table.appendChild(tr);
 
-        // Label cell
+        // 标签单元格
         const labelCell = document.createElement("td");
         labelCell.style.padding = "12px 6px";
         labelCell.style.fontWeight = "bold";
@@ -353,7 +184,7 @@ function displayMedianResults(currentTable) {
         if (index === 0) labelCell.style.borderTop = "4px solid #ddd";
         labelCell.textContent = data.label;
         
-        // Add dark gray background for time difference rows
+        // 为时间差异行添加深灰色背景
         if (data.label.includes("time difference")) {
             labelCell.style.backgroundColor = "#808080";
             labelCell.style.color = "white";
@@ -361,7 +192,7 @@ function displayMedianResults(currentTable) {
         
         tr.appendChild(labelCell);
         
-        // Value cell
+        // 值单元格
         const valueCell = document.createElement("td");
         valueCell.style.padding = "12px 6px";
         valueCell.style.fontWeight = "bold";
@@ -369,7 +200,7 @@ function displayMedianResults(currentTable) {
         valueCell.colSpan = 5;
         if (index === 0) valueCell.style.borderTop = "4px solid #ddd";
         
-        // Add dark gray background for time difference rows
+        // 为时间差异行添加深灰色背景
         if (data.label.includes("time difference")) {
             valueCell.style.backgroundColor = "#808080";
             valueCell.style.color = "white";
@@ -380,9 +211,9 @@ function displayMedianResults(currentTable) {
         tr.appendChild(valueCell);
     });
 
-    // Add bootstrap confidence interval row
+    // 添加bootstrap置信区间行
     if (currentTable.percentageDifferences.length >= 2) {
-        const ci = bootstrapConfidenceInterval(currentTable.percentageDifferences);
+        const ci = F1Utils.bootstrapConfidenceInterval(currentTable.percentageDifferences);
         const tr = document.createElement("tr");
         currentTable.table.appendChild(tr);
 
@@ -405,11 +236,11 @@ function displayMedianResults(currentTable) {
         tr.appendChild(valueCell);
     }
 
-    // Add qualifying score
+    // 添加排位赛得分
     const qualyScoreTr = document.createElement("tr");
     currentTable.table.appendChild(qualyScoreTr);
 
-    // Label cell
+    // 标签单元格
     const labelCell = document.createElement("td");
     labelCell.style.padding = "12px 6px";
     labelCell.style.fontWeight = "bold";
@@ -418,7 +249,7 @@ function displayMedianResults(currentTable) {
     labelCell.textContent = "Qualifying score";
     qualyScoreTr.appendChild(labelCell);
 
-    // Score cell
+    // 分数单元格
     const scoreCell = document.createElement("td");
     scoreCell.style.padding = "12px 6px";
     scoreCell.style.textAlign = "center";
@@ -437,12 +268,12 @@ function displayMedianResults(currentTable) {
     scoreCell.textContent = scoreText;
     qualyScoreTr.appendChild(scoreCell);
 
-    // Create a dedicated container for the graph
+    // 创建专用的图表容器
     const graphContainer = document.createElement('div');
     graphContainer.className = 'graph-container';
     currentTable.contentWrapper.appendChild(graphContainer);
     
-    // Create the trend graph with deltaPercentages
+    // 使用deltaPercentages创建趋势图
     QualifyingTrendGraph(
         graphContainer,
         currentTable.deltaPercentages,
@@ -451,17 +282,7 @@ function displayMedianResults(currentTable) {
     );
 }
 
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////  END END END  ///////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////END OF DISPLAY MEDIAN RESULTS END OF//////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////  END END END  ///////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// Create all qualifying tables
-
+// 创建所有排位赛表格
 function createQualifyingTable(results) {
     const div = document.getElementById("tables");
     div.innerHTML = "";
@@ -473,13 +294,13 @@ function createQualifyingTable(results) {
     for(let i = 0; i < races.length; i++) {
         if (races[i].QualifyingResults.length !== 2) continue;
 
-        races[i].QualifyingResults.sort((a,b) => a.number - b.number);
+        races[i].QualifyingResults.sort((a,b) => a.Driver.driverId.localeCompare(b.Driver.driverId));
 
         let driver1Id = races[i].QualifyingResults[0].Driver.driverId;
         let driver2Id = races[i].QualifyingResults[1].Driver.driverId;
 
-        const driver1 = newDriver(driver1Id < driver2Id ? races[i].QualifyingResults[0] : races[i].QualifyingResults[1]);
-        const driver2 = newDriver(driver1Id > driver2Id ? races[i].QualifyingResults[0] : races[i].QualifyingResults[1]);
+        const driver1 = F1Utils.newDriver(races[i].QualifyingResults[0]);
+        const driver2 = F1Utils.newDriver(races[i].QualifyingResults[1]);
 
         if(i === 0) {
             currentTable = createTable(driver1, driver2);
@@ -498,18 +319,18 @@ function createQualifyingTable(results) {
         tr.style.borderBottom = "1px solid #ddd";
         currentTable.table.appendChild(tr);
 
-        // Add all cells with consistent styling
+        // 添加所有单元格和一致的样式
         const cells = [
             { text: races[i].round, align: "center" },
             { text: races[i].raceName, align: "left" }
         ];
 
-        // Add times first
-        const d1Times = bestTime(driver1);
-        const d2Times = bestTime(driver2);
-        const comparison = compareDriverTimes(d1Times, d2Times);
+        // 先添加时间
+        const d1Times = F1Utils.getDriverBestTime(driver1.ref);
+        const d2Times = F1Utils.getDriverBestTime(driver2.ref);
+        const comparison = F1Utils.compareQualifyingTimes(d1Times, d2Times);
 
-        // Define session colors
+        // 定义阶段颜色
         const sessionColors = {
             'Q1': '#ffcdd2',
             'Q2': '#fff9c4',
@@ -530,21 +351,21 @@ function createQualifyingTable(results) {
         } else {
             currentTable.raceCount++;
             
-            const d1TimeMs = convertTimeString(comparison.d1Time);
-            const d2TimeMs = convertTimeString(comparison.d2Time);
+            const d1TimeMs = F1Utils.convertTimeString(comparison.d1Time);
+            const d2TimeMs = F1Utils.convertTimeString(comparison.d2Time);
             const timeDifference = d2TimeMs - d1TimeMs;
             const percentageDifference = (timeDifference / d1TimeMs) * 100;
 
             currentTable.timeDifferences.push(timeDifference);
             currentTable.percentageDifferences.push(percentageDifference);
-            // Store round number along with the delta percentage
+            // 存储轮次编号和delta百分比
             currentTable.deltaPercentages.push([parseInt(races[i].round), percentageDifference]);
 
             if (timeDifference > 0) {
                 currentTable.driver1Better++;
             }
 
-            const time = millisecondsToStruct(timeDifference);
+            const time = F1Utils.millisecondsToStruct(timeDifference);
             const tdColor = time.isNegative ? "#FF7878" : "#85FF78";
 
             cells[0].backgroundColor = tdColor;
@@ -567,7 +388,7 @@ function createQualifyingTable(results) {
             );
         }
 
-        // Create all cells with consistent styling
+        // 创建具有一致样式的所有单元格
         cells.forEach(cellData => {
             const td = document.createElement("td");
             td.textContent = cellData.text;
@@ -580,30 +401,30 @@ function createQualifyingTable(results) {
         });
     }
 
-    // Display summary statistics for each table
+    // 为每个表格显示汇总统计
     tableList.forEach(table => {
         displayMedianResults(table);
     });
 }
 
-// Add constructors to dropdown list
-function fillConstructorsList(list, currentSelect){
+// 添加车队到下拉列表
+function fillConstructorsList(list, currentSelect) {
     const select = document.getElementById("constructorList");
     select.innerHTML = "";
-    list.MRData.ConstructorTable.Constructors.forEach((elm) =>{
+    list.MRData.ConstructorTable.Constructors.forEach((elm) => {
         const option = document.createElement("option");
         option.value = elm.name;
         option.innerHTML = elm.name;
         option.id = elm.constructorId;
         select.appendChild(option);
-        // Keep current constructor selected if available
-        if (elm.name == currentSelect){
+        // 如果可用，保持当前车队选中
+        if (elm.name == currentSelect) {
             select.value = currentSelect;
         }
     });
 }
 
-async function displayResults(){
+async function displayResults() {
     const yearList = document.getElementById("seasonList");
     const constructorList = document.getElementById("constructorList");
     
@@ -611,86 +432,42 @@ async function displayResults(){
     const constructorId = options[options.selectedIndex].id;
     const year = yearList.value;
 
-    const qualifying = await getQualifying(year, constructorId);
+    const qualifying = await F1Utils.getQualifying(year, constructorId);
     createQualifyingTable(qualifying);
 }
 
-
-function bootstrapConfidenceInterval(data, confidence = 0.95, iterations = 10000) {
-    if (data.length < 2) return { lower: NaN, upper: NaN };
-    
-    // Function to calculate median of an array
-    const calculateMedian = arr => {
-        const sorted = [...arr].sort((a, b) => a - b);
-        const mid = Math.floor(sorted.length / 2);
-        return sorted.length % 2 === 0 
-            ? (sorted[mid - 1] + sorted[mid]) / 2 
-            : sorted[mid];
-    };
-    
-    // Function to sample with replacement
-    const sample = (arr) => {
-        const result = new Array(arr.length);
-        for (let i = 0; i < arr.length; i++) {
-            result[i] = arr[Math.floor(Math.random() * arr.length)];
-        }
-        return result;
-    };
-    
-    // Generate bootstrap samples and calculate medians
-    const bootstrapMedians = new Array(iterations);
-    for (let i = 0; i < iterations; i++) {
-        bootstrapMedians[i] = calculateMedian(sample(data));
-    }
-    
-    // Sort the medians to find percentile-based confidence interval
-    bootstrapMedians.sort((a, b) => a - b);
-    
-    const alpha = 1 - confidence;
-    const lowerIndex = Math.floor((alpha / 2) * iterations);
-    const upperIndex = Math.floor((1 - alpha / 2) * iterations);
-    
-    return {
-        lower: bootstrapMedians[lowerIndex],
-        upper: bootstrapMedians[upperIndex]
-    };
-}
-
-
 async function main() {
-    // Initialize qualifying tab
+    // 初始化排位赛标签
     const seasonList = document.getElementById("seasonList");
     seasonList.addEventListener("change", selectOnChange);
     document.getElementById("go").addEventListener("click", displayResults);
 
-    // Get seasons data
-    console.log("Fetching seasons data...");
-    const results = await getSeasons();
-    console.log("Seasons data:", results);
+    // 获取赛季数据
+    console.log("获取赛季数据...");
+    const results = await F1Utils.getSeasons();
+    console.log("赛季数据:", results);
     
     if (results) {
         const seasons = results.MRData.SeasonTable.Seasons.reverse();
         const currentYear = seasons[0].season;
-        console.log(`Current year: ${currentYear}`);
+        console.log(`当前年份: ${currentYear}`);
 
-        // Fill constructor list for qualifying tab
-        console.log(`Fetching constructors for ${currentYear}...`);
-        const constructorList = await getConstructors(currentYear);
-        console.log("Constructor data:", constructorList);
+        // 填充排位赛标签的车队列表
+        console.log(`获取${currentYear}年的车队...`);
+        const constructorList = await F1Utils.getConstructors(currentYear);
+        console.log("车队数据:", constructorList);
         
         if (constructorList) {
             fillConstructorsList(constructorList);
         } else {
-            console.error("Failed to fetch constructor list");
+            console.error("无法获取车队列表");
         }
 
-        // Fill season list for qualifying tab
+        // 填充排位赛标签的赛季列表
         seasonList.innerHTML = seasons.map(season => 
             `<option value="${season.season}">${season.season}</option>`
         ).join('');
-
-        // Rest of the function remains the same...
     } else {
-        console.error("Failed to fetch seasons data");
+        console.error("无法获取赛季数据");
     }
 }
