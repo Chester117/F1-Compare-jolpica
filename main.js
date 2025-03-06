@@ -1,8 +1,6 @@
 async function fetchData(url){
     try {
-        // Replace ergast.com with jolpica-f1.com
-        const updatedUrl = url.replace("ergast.com/api/f1", "jolpica-f1.com/api");
-        let response = await fetch(updatedUrl);
+        let response = await fetch(url);
 
         if (!response.ok) {
             return undefined;
@@ -16,15 +14,15 @@ async function fetchData(url){
 }
 
 async function getSeasons(){
-    return fetchData("https://ergast.com/api/f1/seasons.json?offset=44&limit=100");
+    return fetchData("https://jolpica-f1.com/api/seasons.json?offset=44&limit=100");
 }
 
 async function getConstructors(year){
-    return fetchData(`https://ergast.com/api/f1/${year}/constructors.json`);
+    return fetchData(`https://jolpica-f1.com/api/${year}/constructors.json`);
 }
 
 async function getQualifying(year, constructorId){
-    return fetchData(`https://ergast.com/api/f1/${year}/constructors/${constructorId}/qualifying.json?limit=60`);
+    return fetchData(`https://jolpica-f1.com/api/${year}/constructors/${constructorId}/qualifying.json?limit=60`);
 }
 
 // Update constructors list
