@@ -42,26 +42,6 @@ const TEAM_MAPPING = {
     "MoneyGram Haas F1 Team": "Haas"
 };
 
-// API测试函数
-async function testJolpicaApi() {
-    console.log("Testing Jolpica API...");
-    
-    try {
-        const response = await fetch("https://jolpica-f1.com/api/2023/constructors.json");
-        if (!response.ok) {
-            console.error("API test failed:", response.statusText);
-            return false;
-        } else {
-            const data = await response.json();
-            console.log("API test successful:", data);
-            return true;
-        }
-    } catch (e) {
-        console.error("API test exception:", e);
-        return false;
-    }
-}
-
 // 数据获取函数
 async function fetchData(url) {
     try {
@@ -76,8 +56,7 @@ async function fetchData(url) {
             console.error(`Error fetching ${url}: ${response.statusText}`);
             return undefined;
         } else {
-            let json = await response.json();
-            return json;
+            return await response.json();
         }
     } catch (e) {
         console.error(`Exception fetching ${url}:`, e);
@@ -85,6 +64,7 @@ async function fetchData(url) {
     }
 }
 
+// API endpoint functions
 async function getSeasons() {
     return fetchData("https://api.jolpi.ca/ergast/f1/seasons.json?offset=44&limit=100");
 }
@@ -103,38 +83,36 @@ function normalizeTeamName(teamName) {
 }
 
 // 时间处理函数
-// 将毫秒转换为结构化时间对象
 function millisecondsToStruct(time) {
-    const newTime = {};
-    newTime.isNegative = time < 0 ? true : false;
+    const isNegative = time < 0;
     time = Math.abs(time);
-    newTime.minutes = Math.floor(time/60000);
+    const minutes = Math.floor(time/60000);
     time = time % 60000;
-    newTime.seconds = Math.floor(time/1000);
-    newTime.milliseconds = Math.floor(time % 1000);
-    return newTime;
+    const seconds = Math.floor(time/1000);
+    const milliseconds = Math.floor(time % 1000);
+    return { isNegative, minutes, seconds, milliseconds };
 }
 
 // 将时间字符串转换为毫秒
 function convertTimeString(time) {
-    let milliseconds = 0;
     const tkns = time.split(":");
+    let milliseconds = 0;
+    
     if (tkns.length === 2) {
-        milliseconds += (parseInt(tkns[0]) * 60000);
+        // Format: MM:SS.sss
+        milliseconds = parseInt(tkns[0]) * 60000;
         const tkns2 = tkns[1].split(".");
-        milliseconds += parseInt(tkns2[0]) * 1000;
-        milliseconds += parseInt(tkns2[1]);
-        return milliseconds;
+        milliseconds += parseInt(tkns2[0]) * 1000 + parseInt(tkns2[1]);
     } else {
+        // Format: SS.sss
         const tkns2 = tkns[0].split(".");
-        milliseconds += parseInt(tkns2[0]) * 1000;
-        milliseconds += parseInt(tkns2[1]);
-        return milliseconds;
+        milliseconds = parseInt(tkns2[0]) * 1000 + parseInt(tkns2[1]);
     }
+    
+    return milliseconds;
 }
 
 // 车手相关函数
-// 创建新车手对象
 function newDriver(d) {
     return {
         name: `${d.Driver.givenName} ${d.Driver.familyName}`,
@@ -172,36 +150,28 @@ function compareQualifyingTimes(driver1Times, driver2Times) {
         d2Time = driver2Times.Q1;
     }
 
-    return {
-        sessionUsed,
-        d1Time,
-        d2Time
-    };
+    return { sessionUsed, d1Time, d2Time };
 }
 
 // 创建表格单元格
 function newTd(text, bold, styleOptions) {
     let td = document.createElement("td");
     if (bold) {
-        let bold = document.createElement("strong");
-        let textNode = document.createTextNode(text);
-        bold.appendChild(textNode);
-        td.appendChild(bold);
+        let boldElem = document.createElement("strong");
+        boldElem.textContent = text;
+        td.appendChild(boldElem);
+    } else {
+        td.textContent = text;
     }
-    else {
-        td.appendChild(document.createTextNode(text));
-    }
+    
     if (styleOptions) {
-        for (let key of Object.keys(styleOptions)) {
-            td.style[key] = styleOptions[key];
-        }
+        Object.assign(td.style, styleOptions);
     }
     
     return td;
 }
 
 // 统计分析函数
-// 计算中位数
 function calculateMedian(numbers) {
     if (numbers.length === 0) return 0;
     
@@ -224,15 +194,6 @@ function calculateAverage(arr) {
 function bootstrapConfidenceInterval(data, confidence = 0.95, iterations = 10000) {
     if (data.length < 2) return { lower: NaN, upper: NaN };
     
-    // 函数计算数组的中位数
-    const calculateMedian = arr => {
-        const sorted = [...arr].sort((a, b) => a - b);
-        const mid = Math.floor(sorted.length / 2);
-        return sorted.length % 2 === 0 
-            ? (sorted[mid - 1] + sorted[mid]) / 2 
-            : sorted[mid];
-    };
-    
     // 有放回抽样函数
     const sample = (arr) => {
         const result = new Array(arr.length);
@@ -245,7 +206,8 @@ function bootstrapConfidenceInterval(data, confidence = 0.95, iterations = 10000
     // 生成bootstrap样本并计算中位数
     const bootstrapMedians = new Array(iterations);
     for (let i = 0; i < iterations; i++) {
-        bootstrapMedians[i] = calculateMedian(sample(data));
+        const sampleData = sample(data);
+        bootstrapMedians[i] = calculateMedian(sampleData);
     }
     
     // 排序中位数，找到基于百分位的置信区间
@@ -267,7 +229,6 @@ window.F1Utils = {
     TEAM_MAPPING,
     
     // API和数据获取
-    testJolpicaApi,
     fetchData,
     getSeasons,
     getConstructors,
