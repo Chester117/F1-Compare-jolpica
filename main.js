@@ -1,6 +1,5 @@
 // 页面加载时初始化
 window.addEventListener("load", () => {
-    F1Utils.testJolpicaApi();
     main();
 });
 
@@ -17,44 +16,25 @@ async function selectOnChange(event) {
 // 创建车手对比表格
 function createTable(driver1, driver2) {
     const div = document.getElementById("tables");
-    div.style.display = "flex";
-    div.style.flexDirection = "column";
-    div.style.alignItems = "center";
-    div.style.width = "100%";
-    div.style.margin = "0 auto";
+    div.innerHTML = "";
+    div.className = "flex-comparison-container";
     
     const driverHeader = document.createElement("h1");
-    driverHeader.style.fontSize = "2em";
-    driverHeader.style.marginBottom = "1em";
-    driverHeader.style.textAlign = "center";
-    driverHeader.style.fontFamily = "'Source Han Sans SC', sans-serif";
-    driverHeader.style.width = "100%";
+    driverHeader.className = "comparison-header";
     driverHeader.textContent = `${driver1.name} vs ${driver2.name}`;
     div.appendChild(driverHeader);
     
     // 创建包装器div用于更好地控制表格和图表布局
     const contentWrapper = document.createElement("div");
     contentWrapper.className = "table-graph-wrapper";
-    contentWrapper.style.width = "100%";
-    contentWrapper.style.display = "flex";
-    contentWrapper.style.flexDirection = "column";
-    contentWrapper.style.alignItems = "center";
     div.appendChild(contentWrapper);
     
     const tableContainer = document.createElement("div");
     tableContainer.className = "table-container";
-    tableContainer.style.display = "flex";
-    tableContainer.style.justifyContent = "center";
-    tableContainer.style.marginBottom = "2em";
-    tableContainer.style.width = "100%";
-    tableContainer.style.overflowX = "auto";
     contentWrapper.appendChild(tableContainer);
     
     const table = document.createElement("table");
-    table.style.borderCollapse = "collapse";
-    table.style.width = "fit-content";
-    table.style.marginBottom = "1em";
-    table.style.backgroundColor = "#f5f5f5";
+    table.className = "comparison-table";
     tableContainer.appendChild(table);
     
     const tr = document.createElement("tr");
@@ -72,12 +52,10 @@ function createTable(driver1, driver2) {
 
     headers.forEach((header, index) => {
         let th = document.createElement("th");
-        th.appendChild(document.createTextNode(header.text));
+        th.textContent = header.text;
         th.className = `row-${index + 1}`;
-        th.style.padding = "6px";
-        th.style.textAlign = index === 1 ? "left" : "center";
         th.style.width = header.width;
-        th.style.whiteSpace = "nowrap";
+        th.style.textAlign = index === 1 ? "left" : "center";
         tr.appendChild(th);
     });
     
@@ -92,26 +70,6 @@ function createTable(driver1, driver2) {
         deltaPercentages: [],
         driver1Better: 0,
     };
-}
-
-// 显示排位赛得分
-function displayQualyScore(currentTable) {
-    const tr = document.createElement("tr");
-    currentTable.table.appendChild(tr);
-
-    tr.appendChild(F1Utils.newTd("Qualifying score", true, { textAlign: "left" })); 
-    tr.appendChild(F1Utils.newTd("", false));
-    tr.appendChild(F1Utils.newTd("", false));
-
-    const tdText = `${currentTable.driver1Better} - ${currentTable.raceCount - currentTable.driver1Better}`;
-    let tdColour = "#ffc478";
-    if (currentTable.driver1Better > (currentTable.raceCount - currentTable.driver1Better)) {
-        tdColour = "#85FF78";
-    }
-    else if (currentTable.driver1Better < (currentTable.raceCount - currentTable.driver1Better)) {
-        tdColour = "#FF7878";
-    }
-    tr.appendChild(F1Utils.newTd(tdText, true, { backgroundColor: tdColour}));
 }
 
 // 显示统计结果
@@ -171,39 +129,35 @@ function displayMedianResults(currentTable) {
         }
     ];
 
+    // Create summary rows
     summaryData.forEach((data, index) => {
         const tr = document.createElement("tr");
+        tr.className = "summary-row";
         currentTable.table.appendChild(tr);
 
         // 标签单元格
         const labelCell = document.createElement("td");
-        labelCell.style.padding = "12px 6px";
-        labelCell.style.fontWeight = "bold";
-        labelCell.style.textAlign = "left";
+        labelCell.className = "summary-label";
         labelCell.colSpan = 2;
-        if (index === 0) labelCell.style.borderTop = "4px solid #ddd";
+        if (index === 0) labelCell.classList.add("top-border");
         labelCell.textContent = data.label;
         
         // 为时间差异行添加深灰色背景
         if (data.label.includes("time difference")) {
-            labelCell.style.backgroundColor = "#808080";
-            labelCell.style.color = "white";
+            labelCell.classList.add("time-difference");
         }
         
         tr.appendChild(labelCell);
         
         // 值单元格
         const valueCell = document.createElement("td");
-        valueCell.style.padding = "12px 6px";
-        valueCell.style.fontWeight = "bold";
-        valueCell.style.textAlign = "center";
+        valueCell.className = "summary-value";
         valueCell.colSpan = 5;
-        if (index === 0) valueCell.style.borderTop = "4px solid #ddd";
+        if (index === 0) valueCell.classList.add("top-border");
         
         // 为时间差异行添加深灰色背景
         if (data.label.includes("time difference")) {
-            valueCell.style.backgroundColor = "#808080";
-            valueCell.style.color = "white";
+            valueCell.classList.add("time-difference");
         }
         
         const result = data.getValue();
@@ -215,20 +169,17 @@ function displayMedianResults(currentTable) {
     if (currentTable.percentageDifferences.length >= 2) {
         const ci = F1Utils.bootstrapConfidenceInterval(currentTable.percentageDifferences);
         const tr = document.createElement("tr");
+        tr.className = "summary-row";
         currentTable.table.appendChild(tr);
 
         const labelCell = document.createElement("td");
-        labelCell.style.padding = "12px 6px";
-        labelCell.style.fontWeight = "bold";
-        labelCell.style.textAlign = "left";
+        labelCell.className = "summary-label";
         labelCell.colSpan = 2;
         labelCell.textContent = "95% CI (Bootstrap)";
         tr.appendChild(labelCell);
 
         const valueCell = document.createElement("td");
-        valueCell.style.padding = "12px 6px";
-        valueCell.style.fontWeight = "bold";
-        valueCell.style.textAlign = "center";
+        valueCell.className = "summary-value";
         valueCell.colSpan = 5;
         const lowerValue = Number(ci.lower).toFixed(3);
         const upperValue = Number(ci.upper).toFixed(3);
@@ -238,23 +189,20 @@ function displayMedianResults(currentTable) {
 
     // 添加排位赛得分
     const qualyScoreTr = document.createElement("tr");
+    qualyScoreTr.className = "summary-row";
     currentTable.table.appendChild(qualyScoreTr);
 
     // 标签单元格
     const labelCell = document.createElement("td");
-    labelCell.style.padding = "12px 6px";
-    labelCell.style.fontWeight = "bold";
-    labelCell.style.textAlign = "left";
+    labelCell.className = "summary-label";
     labelCell.colSpan = 2;
     labelCell.textContent = "Qualifying score";
     qualyScoreTr.appendChild(labelCell);
 
     // 分数单元格
     const scoreCell = document.createElement("td");
-    scoreCell.style.padding = "12px 6px";
-    scoreCell.style.textAlign = "center";
-    scoreCell.style.fontSize = "1.1em";
-    scoreCell.style.fontWeight = "bold";
+    scoreCell.className = "summary-value";
+    scoreCell.classList.add("quali-score");
     scoreCell.colSpan = 5;
 
     const headers = currentTable.table.getElementsByTagName('th');
@@ -296,9 +244,6 @@ function createQualifyingTable(results) {
 
         races[i].QualifyingResults.sort((a,b) => a.Driver.driverId.localeCompare(b.Driver.driverId));
 
-        let driver1Id = races[i].QualifyingResults[0].Driver.driverId;
-        let driver2Id = races[i].QualifyingResults[1].Driver.driverId;
-
         const driver1 = F1Utils.newDriver(races[i].QualifyingResults[0]);
         const driver2 = F1Utils.newDriver(races[i].QualifyingResults[1]);
 
@@ -316,19 +261,8 @@ function createQualifyingTable(results) {
         }
         
         const tr = document.createElement("tr");
-        tr.style.borderBottom = "1px solid #ddd";
+        tr.className = "race-row";
         currentTable.table.appendChild(tr);
-
-        // 添加所有单元格和一致的样式
-        const cells = [
-            { text: races[i].round, align: "center" },
-            { text: races[i].raceName, align: "left" }
-        ];
-
-        // 先添加时间
-        const d1Times = F1Utils.getDriverBestTime(driver1.ref);
-        const d2Times = F1Utils.getDriverBestTime(driver2.ref);
-        const comparison = F1Utils.compareQualifyingTimes(d1Times, d2Times);
 
         // 定义阶段颜色
         const sessionColors = {
@@ -337,17 +271,21 @@ function createQualifyingTable(results) {
             'Q3': '#e1bee7'
         };
 
-        cells.push(
-            { text: comparison.d1Time || "N/A", align: "center" },
-            { text: comparison.d2Time || "N/A", align: "center" }
-        );
+        // 获取比较数据
+        const d1Times = F1Utils.getDriverBestTime(driver1.ref);
+        const d2Times = F1Utils.getDriverBestTime(driver2.ref);
+        const comparison = F1Utils.compareQualifyingTimes(d1Times, d2Times);
+
+        // 添加基础单元格
+        addCell(tr, races[i].round, "center");
+        addCell(tr, races[i].raceName, "left");
+        addCell(tr, comparison.d1Time || "N/A", "center");
+        addCell(tr, comparison.d2Time || "N/A", "center");
 
         if (!comparison.sessionUsed || !comparison.d1Time || !comparison.d2Time) {
-            cells.push(
-                { text: "No comparable times", align: "center" },
-                { text: "N/A", align: "center" },
-                { text: "N/A", align: "center" }
-            );
+            addCell(tr, "No comparable times", "center");
+            addCell(tr, "N/A", "center");
+            addCell(tr, "N/A", "center");
         } else {
             currentTable.raceCount++;
             
@@ -368,43 +306,35 @@ function createQualifyingTable(results) {
             const time = F1Utils.millisecondsToStruct(timeDifference);
             const tdColor = time.isNegative ? "#FF7878" : "#85FF78";
 
-            cells[0].backgroundColor = tdColor;
-            cells[1].backgroundColor = tdColor;
+            // 为前两个单元格设置背景色
+            tr.cells[0].style.backgroundColor = tdColor;
+            tr.cells[1].style.backgroundColor = tdColor;
 
-            cells.push(
-                { 
-                    text: `${time.isNegative ? "-" : "+"}${time.minutes > 0 ? time.minutes+":" : ""}${time.seconds}.${time.milliseconds.toString().padStart(3, '0')}`,
-                    align: "center"
-                },
-                { 
-                    text: `${percentageDifference > 0 ? "+" : ""}${percentageDifference.toFixed(3)}%`,
-                    align: "center"
-                },
-                { 
-                    text: comparison.sessionUsed || "N/A", 
-                    align: "center",
-                    backgroundColor: comparison.sessionUsed ? sessionColors[comparison.sessionUsed] : null 
-                }
-            );
-        }
-
-        // 创建具有一致样式的所有单元格
-        cells.forEach(cellData => {
-            const td = document.createElement("td");
-            td.textContent = cellData.text;
-            td.style.padding = "8px";
-            td.style.textAlign = cellData.align;
-            if (cellData.backgroundColor) {
-                td.style.backgroundColor = cellData.backgroundColor;
+            // 添加时间差、百分比差和赛段单元格
+            const timeText = `${time.isNegative ? "-" : "+"}${time.minutes > 0 ? time.minutes+":" : ""}${time.seconds}.${time.milliseconds.toString().padStart(3, '0')}`;
+            addCell(tr, timeText, "center");
+            addCell(tr, `${percentageDifference > 0 ? "+" : ""}${percentageDifference.toFixed(3)}%`, "center");
+            
+            const sessionCell = addCell(tr, comparison.sessionUsed || "N/A", "center");
+            if (comparison.sessionUsed) {
+                sessionCell.style.backgroundColor = sessionColors[comparison.sessionUsed];
             }
-            tr.appendChild(td);
-        });
+        }
     }
 
     // 为每个表格显示汇总统计
     tableList.forEach(table => {
         displayMedianResults(table);
     });
+}
+
+// 辅助函数：添加表格单元格
+function addCell(row, text, align) {
+    const td = document.createElement("td");
+    td.textContent = text;
+    td.style.textAlign = align;
+    row.appendChild(td);
+    return td;
 }
 
 // 添加车队到下拉列表
@@ -443,19 +373,14 @@ async function main() {
     document.getElementById("go").addEventListener("click", displayResults);
 
     // 获取赛季数据
-    console.log("获取赛季数据...");
     const results = await F1Utils.getSeasons();
-    console.log("赛季数据:", results);
     
     if (results) {
         const seasons = results.MRData.SeasonTable.Seasons.reverse();
         const currentYear = seasons[0].season;
-        console.log(`当前年份: ${currentYear}`);
 
         // 填充排位赛标签的车队列表
-        console.log(`获取${currentYear}年的车队...`);
         const constructorList = await F1Utils.getConstructors(currentYear);
-        console.log("车队数据:", constructorList);
         
         if (constructorList) {
             fillConstructorsList(constructorList);
