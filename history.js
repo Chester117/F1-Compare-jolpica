@@ -1,135 +1,20 @@
 // 全局变量用于记录是否已初始化
 window.historyTabInitialized = false;
 
-// 车队名称映射 - 将不同时期的同一支车队名称映射为统一名称
-const TEAM_MAPPING = {
-    // Red Bull系列车队
-    "AlphaTauri": "Red Bull Junior Team",
-    "Alpha Tauri": "Red Bull Junior Team",
-    "Toro Rosso": "Red Bull Junior Team",
-    "Visa Cash App RB": "Red Bull Junior Team",
-    "VCARB": "Red Bull Junior Team",
-    "RB": "Red Bull Junior Team",
-    
-    // Mercedes系列
-    "Brawn": "Mercedes",
-    "Brawn GP": "Mercedes",
-    
-    // Alpine/Renault系列
-    "Alpine F1 Team": "Alpine/Renault",
-    "Alpine": "Alpine/Renault",
-    "Renault": "Alpine/Renault",
-    
-    // Aston Martin系列
-    "Racing Point": "Aston Martin",
-    "Force India": "Aston Martin",
-    
-    // Ferrari客户
-    "Sauber": "Sauber/Alfa Romeo",
-    "Alfa Romeo": "Sauber/Alfa Romeo",
-    "Alfa": "Sauber/Alfa Romeo",
-    "Kick Sauber": "Sauber/Alfa Romeo",
-    "Stake F1 Team Kick Sauber": "Sauber/Alfa Romeo",
-    
-    // 其他历史车队
-    "Lotus F1": "Lotus",
-    "Lotus": "Lotus",
-    "Team Lotus": "Lotus",
-    "Caterham": "Lotus",
-    
-    "Marussia": "Manor/Marussia",
-    "Manor": "Manor/Marussia",
-    "Virgin": "Manor/Marussia",
-    
-    "Haas F1 Team": "Haas",
-    "MoneyGram Haas F1 Team": "Haas"
-};
-
-// 数据获取函数
-async function fetchData(url) {
-    try {
-        let response = await fetch(url, {
-            headers: {
-                'Accept': 'application/json'
-            },
-            mode: 'cors'
-        });
-
-        if (!response.ok) {
-            console.error(`Error fetching ${url}: ${response.statusText}`);
-            return undefined;
-        } else {
-            let json = await response.json();
-            return json;
-        }
-    } catch (e) {
-        console.error(`Exception fetching ${url}:`, e);
-        return undefined;
-    }
-}
-
-async function getSeasons() {
-    return fetchData("https://api.jolpi.ca/ergast/f1/seasons.json?offset=44&limit=100");
-}
-
-async function getConstructors(year) {
-    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/constructors.json`);
-}
-
-async function getQualifying(year, constructorId) {
-    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/constructors/${constructorId}/qualifying.json?limit=60`);
-}
-
-// 辅助函数
-function convertTimeString(time) {
-    let milliseconds = 0;
-    const tkns = time.split(":");
-    if (tkns.length === 2) {
-        milliseconds += (parseInt(tkns[0]) * 60000);
-        const tkns2 = tkns[1].split(".");
-        milliseconds += parseInt(tkns2[0]) * 1000;
-        milliseconds += parseInt(tkns2[1]);
-        return milliseconds;
-    } else {
-        const tkns2 = tkns[0].split(".");
-        milliseconds += parseInt(tkns2[0]) * 1000;
-        milliseconds += parseInt(tkns2[1]);
-        return milliseconds;
-    }
-}
-
-function calculateMedian(numbers) {
-    if (numbers.length === 0) return 0;
-    
-    const sorted = numbers.sort((a, b) => a - b);
-    const middle = Math.floor(sorted.length / 2);
-
-    if (sorted.length % 2 === 0) {
-        return (sorted[middle - 1] + sorted[middle]) / 2;
-    }
-
-    return sorted[middle];
-}
-
-// 标准化车队名称
-function normalizeTeamName(teamName) {
-    return TEAM_MAPPING[teamName] || teamName;
-}
-
 // 根据年份更新车队选择器
 async function updateTeamSelector(year) {
-    const list = await getConstructors(year);
+    const list = await F1Utils.getConstructors(year);
     if (list) {
         const historyConstructor = document.getElementById('historyConstructorList');
         const currentSelection = historyConstructor.value;
         
         if (historyConstructor) {
             // 保存选项，以便我们可以尝试在新的选择器中保持相同的选择
-            const normalizedCurrentSelection = normalizeTeamName(currentSelection);
+            const normalizedCurrentSelection = F1Utils.normalizeTeamName(currentSelection);
             
             // 创建下拉选项
             historyConstructor.innerHTML = list.MRData.ConstructorTable.Constructors.map(team => {
-                const normalizedName = normalizeTeamName(team.name);
+                const normalizedName = F1Utils.normalizeTeamName(team.name);
                 const displayName = `${team.name}${normalizedName !== team.name ? ` (${normalizedName})` : ''}`;
                 return `<option value="${team.name}" id="${team.constructorId}" data-normalized="${normalizedName}">${displayName}</option>`;
             }).join('');
@@ -155,7 +40,7 @@ async function updateTeamSelector(year) {
 
 // 初始化选择器函数
 async function fillYearSelectors() {
-    const years = await getSeasons();
+    const years = await F1Utils.getSeasons();
     if (!years) return;
 
     const yearOptions = years.MRData.SeasonTable.Seasons.reverse().map(s => s.season);
@@ -199,11 +84,11 @@ async function getTeamContinuity(startYear, endYear) {
     const teamYears = {};
     
     for (let year = startYear; year <= endYear; year++) {
-        const data = await getConstructors(year);
+        const data = await F1Utils.getConstructors(year);
         if (!data || !data.MRData.ConstructorTable.Constructors) continue;
         
         data.MRData.ConstructorTable.Constructors.forEach(team => {
-            const normalizedName = normalizeTeamName(team.name);
+            const normalizedName = F1Utils.normalizeTeamName(team.name);
             
             if (!teamPresence[normalizedName]) {
                 teamPresence[normalizedName] = {};
@@ -245,6 +130,18 @@ async function getTeamContinuity(startYear, endYear) {
     };
 }
 
+// 获取指定年份和ID的实际车队名称
+async function getActualTeamName(year, constructorId) {
+    const data = await F1Utils.getConstructors(year);
+    if (data && data.MRData.ConstructorTable.Constructors) {
+        const team = data.MRData.ConstructorTable.Constructors.find(t => t.constructorId === constructorId);
+        if (team) {
+            return team.name;
+        }
+    }
+    return constructorId;
+}
+
 // 显示历史结果函数
 async function showHistoryResults() {
     const startYear = parseInt(document.getElementById('startYearList').value);
@@ -259,7 +156,7 @@ async function showHistoryResults() {
     const selectedOption = constructorSelect.options[constructorSelect.selectedIndex];
     const constructorId = selectedOption.id;
     const constructorName = selectedOption.value;
-    const normalizedName = selectedOption.getAttribute('data-normalized') || normalizeTeamName(constructorName);
+    const normalizedName = selectedOption.getAttribute('data-normalized') || F1Utils.normalizeTeamName(constructorName);
 
     if (startYear > endYear) {
         alert('起始年份必须小于或等于结束年份');
@@ -303,57 +200,55 @@ async function showHistoryResults() {
         // 跳过车队不存在的年份
         if (!actualConstructorId) continue;
         
-        const data = await getQualifying(year, actualConstructorId);
+        const data = await F1Utils.getQualifying(year, actualConstructorId);
         if (!data?.MRData.RaceTable.Races.length) continue;
 
         let timeGaps = [];
         let driver1Wins = 0;
         let totalRaces = 0;
         
-        const firstRace = data.MRData.RaceTable.Races.find(r => r.QualifyingResults.length === 2);
-        if (!firstRace) continue;
-
-        const driver1 = `${firstRace.QualifyingResults[0].Driver.givenName} ${firstRace.QualifyingResults[0].Driver.familyName}`;
-        const driver2 = `${firstRace.QualifyingResults[1].Driver.givenName} ${firstRace.QualifyingResults[1].Driver.familyName}`;
-
+        // 车手信息
+        let driver1 = null;
+        let driver2 = null;
+        
+        // 处理每场比赛数据
         data.MRData.RaceTable.Races.forEach(race => {
             if (race.QualifyingResults.length !== 2) return;
 
-            const d1Times = {
-                Q1: race.QualifyingResults[0].Q1 || null,
-                Q2: race.QualifyingResults[0].Q2 || null,
-                Q3: race.QualifyingResults[0].Q3 || null
-            };
-            const d2Times = {
-                Q1: race.QualifyingResults[1].Q1 || null,
-                Q2: race.QualifyingResults[1].Q2 || null,
-                Q3: race.QualifyingResults[1].Q3 || null
-            };
-
-            let sessionTime = null;
-            if (d1Times.Q3 && d2Times.Q3) {
-                sessionTime = { t1: d1Times.Q3, t2: d2Times.Q3 };
-            } else if (d1Times.Q2 && d2Times.Q2) {
-                sessionTime = { t1: d1Times.Q2, t2: d2Times.Q2 };
-            } else if (d1Times.Q1 && d2Times.Q1) {
-                sessionTime = { t1: d1Times.Q1, t2: d2Times.Q1 };
+            // 确保始终按照同样的顺序排列车手，以便一致地计算谁胜谁负
+            race.QualifyingResults.sort((a, b) => a.Driver.driverId.localeCompare(b.Driver.driverId));
+            
+            // 第一次遇到时记录车手信息
+            if (!driver1 && !driver2) {
+                driver1 = `${race.QualifyingResults[0].Driver.givenName} ${race.QualifyingResults[0].Driver.familyName}`;
+                driver2 = `${race.QualifyingResults[1].Driver.givenName} ${race.QualifyingResults[1].Driver.familyName}`;
             }
 
-            if (sessionTime) {
-                const t1Ms = convertTimeString(sessionTime.t1);
-                const t2Ms = convertTimeString(sessionTime.t2);
-                const timeDiff = t2Ms - t1Ms;
-                const percentageDiff = (timeDiff / t1Ms) * 100;
+            const d1Times = F1Utils.getDriverBestTime(race.QualifyingResults[0]);
+            const d2Times = F1Utils.getDriverBestTime(race.QualifyingResults[1]);
+            
+            const comparison = F1Utils.compareQualifyingTimes(d1Times, d2Times);
+            
+            if (comparison.sessionUsed && comparison.d1Time && comparison.d2Time) {
+                totalRaces++;
+                
+                const d1TimeMs = F1Utils.convertTimeString(comparison.d1Time);
+                const d2TimeMs = F1Utils.convertTimeString(comparison.d2Time);
+                const timeDiff = d2TimeMs - d1TimeMs;  // 正值意味着driver1更快
+                const percentageDiff = (timeDiff / d1TimeMs) * 100;
                 
                 timeGaps.push(percentageDiff);
-                if (timeDiff < 0) driver1Wins++;
-                totalRaces++;
+                
+                // 如果driver1更快
+                if (timeDiff > 0) {
+                    driver1Wins++;
+                }
             }
         });
 
         if (totalRaces > 0) {
             // 计算中位数
-            const medianGap = calculateMedian(timeGaps);
+            const medianGap = F1Utils.calculateMedian(timeGaps);
             
             // 为每一行添加不同的背景色来区分
             let rowClass = '';
@@ -372,8 +267,8 @@ async function showHistoryResults() {
                 <tr ${rowClass}>
                     <td>${year}</td>
                     <td>${teamNameDisplay}</td>
-                    <td>${driver1}</td>
-                    <td>${driver2}</td>
+                    <td>${driver1 || "N/A"}</td>
+                    <td>${driver2 || "N/A"}</td>
                     <td>${medianGap.toFixed(3)}%</td>
                     <td>${driver1Wins} - ${totalRaces - driver1Wins}</td>
                 </tr>
@@ -403,18 +298,6 @@ async function showHistoryResults() {
             <div style="text-align: center; padding: 20px;">未找到符合条件的数据</div>
         `;
     }
-}
-
-// 获取指定年份和ID的实际车队名称
-async function getActualTeamName(year, constructorId) {
-    const data = await getConstructors(year);
-    if (data && data.MRData.ConstructorTable.Constructors) {
-        const team = data.MRData.ConstructorTable.Constructors.find(t => t.constructorId === constructorId);
-        if (team) {
-            return team.name;
-        }
-    }
-    return constructorId;
 }
 
 // 初始化历史标签
