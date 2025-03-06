@@ -1,7 +1,8 @@
-
 async function fetchData(url){
     try {
-        let response = await fetch(url);
+        // Replace ergast.com with jolpica-f1.com
+        const updatedUrl = url.replace("ergast.com/api/f1", "jolpica-f1.com/api");
+        let response = await fetch(updatedUrl);
 
         if (!response.ok) {
             return undefined;
