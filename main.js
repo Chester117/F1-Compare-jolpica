@@ -16,18 +16,26 @@ async function selectOnChange(event) {
 // 创建车手对比表格
 function createTable(driver1, driver2) {
     const div = document.getElementById("tables");
-    div.innerHTML = "";
-    div.className = "flex-comparison-container";
+    
+    // Don't clear the div - we need to keep existing pairings
+    if (!div.classList.contains("flex-comparison-container")) {
+        div.className = "flex-comparison-container";
+    }
+    
+    // Create a wrapper for this specific driver comparison
+    const pairingWrapper = document.createElement("div");
+    pairingWrapper.className = "driver-pairing-container";
+    div.appendChild(pairingWrapper);
     
     const driverHeader = document.createElement("h1");
     driverHeader.className = "comparison-header";
     driverHeader.textContent = `${driver1.name} vs ${driver2.name}`;
-    div.appendChild(driverHeader);
+    pairingWrapper.appendChild(driverHeader);
     
     // 创建包装器div用于更好地控制表格和图表布局
     const contentWrapper = document.createElement("div");
     contentWrapper.className = "table-graph-wrapper";
-    div.appendChild(contentWrapper);
+    pairingWrapper.appendChild(contentWrapper);
     
     const tableContainer = document.createElement("div");
     tableContainer.className = "table-container";
@@ -62,7 +70,7 @@ function createTable(driver1, driver2) {
     return {
         table: table,
         contentWrapper: contentWrapper,
-        id: `${driver1.id}${driver2.id}`,
+        id: `${driver1.id}-${driver2.id}`,
         sameRaceCount: 0,
         raceCount: 0,
         timeDifferences: [],
@@ -233,10 +241,11 @@ function displayMedianResults(currentTable) {
 // 创建所有排位赛表格
 function createQualifyingTable(results) {
     const div = document.getElementById("tables");
-    div.innerHTML = "";
+    div.innerHTML = ""; // Clear existing content before creating new tables
     
     let currentTable = undefined;
     let tableList = [];
+    let processedPairings = new Set(); // Track which driver pairings we've already processed
 
     const races = results.MRData.RaceTable.Races;
     for(let i = 0; i < races.length; i++) {
@@ -247,17 +256,17 @@ function createQualifyingTable(results) {
         const driver1 = F1Utils.newDriver(races[i].QualifyingResults[0]);
         const driver2 = F1Utils.newDriver(races[i].QualifyingResults[1]);
 
-        if(i === 0) {
+        // Create a unique identifier for this driver pairing
+        const pairingId = `${driver1.id}-${driver2.id}`;
+        
+        // Check if we've already processed this pairing
+        if (!processedPairings.has(pairingId)) {
             currentTable = createTable(driver1, driver2);
             tableList.push(currentTable);
+            processedPairings.add(pairingId);
         } else {
-            const newTableId = `${driver1.id}${driver2.id}`;
-            currentTable = tableList.find(t => t.id === newTableId);
-            
-            if(!currentTable) {
-                currentTable = createTable(driver1, driver2);
-                tableList.push(currentTable);
-            }
+            // Find the existing table for this pairing
+            currentTable = tableList.find(t => t.id === pairingId);
         }
         
         const tr = document.createElement("tr");
