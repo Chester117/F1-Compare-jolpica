@@ -42,6 +42,26 @@ const TEAM_MAPPING = {
     "MoneyGram Haas F1 Team": "Haas"
 };
 
+// API测试函数
+async function testJolpicaApi() {
+    console.log("Testing Jolpica API...");
+    
+    try {
+        const response = await fetch("https://jolpica-f1.com/api/2023/constructors.json");
+        if (!response.ok) {
+            console.error("API test failed:", response.statusText);
+            return false;
+        } else {
+            const data = await response.json();
+            console.log("API test successful:", data);
+            return true;
+        }
+    } catch (e) {
+        console.error("API test exception:", e);
+        return false;
+    }
+}
+
 // 数据获取函数
 async function fetchData(url) {
     try {
@@ -83,6 +103,19 @@ function normalizeTeamName(teamName) {
 }
 
 // 时间处理函数
+// 将毫秒转换为结构化时间对象
+function millisecondsToStruct(time) {
+    const newTime = {};
+    newTime.isNegative = time < 0 ? true : false;
+    time = Math.abs(time);
+    newTime.minutes = Math.floor(time/60000);
+    time = time % 60000;
+    newTime.seconds = Math.floor(time/1000);
+    newTime.milliseconds = Math.floor(time % 1000);
+    return newTime;
+}
+
+// 将时间字符串转换为毫秒
 function convertTimeString(time) {
     let milliseconds = 0;
     const tkns = time.split(":");
@@ -100,7 +133,17 @@ function convertTimeString(time) {
     }
 }
 
-// 车手最佳时间获取
+// 车手相关函数
+// 创建新车手对象
+function newDriver(d) {
+    return {
+        name: `${d.Driver.givenName} ${d.Driver.familyName}`,
+        id: d.Driver.driverId,
+        ref: d,
+    };
+}
+
+// 获取车手最佳时间
 function getDriverBestTime(driver) {
     return {
         Q1: driver.Q1 || null,
@@ -136,6 +179,28 @@ function compareQualifyingTimes(driver1Times, driver2Times) {
     };
 }
 
+// 创建表格单元格
+function newTd(text, bold, styleOptions) {
+    let td = document.createElement("td");
+    if (bold) {
+        let bold = document.createElement("strong");
+        let textNode = document.createTextNode(text);
+        bold.appendChild(textNode);
+        td.appendChild(bold);
+    }
+    else {
+        td.appendChild(document.createTextNode(text));
+    }
+    if (styleOptions) {
+        for (let key of Object.keys(styleOptions)) {
+            td.style[key] = styleOptions[key];
+        }
+    }
+    
+    return td;
+}
+
+// 统计分析函数
 // 计算中位数
 function calculateMedian(numbers) {
     if (numbers.length === 0) return 0;
@@ -150,16 +215,81 @@ function calculateMedian(numbers) {
     return sorted[middle];
 }
 
+// 计算平均值
+function calculateAverage(arr) {
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+}
+
+// Bootstrap置信区间计算
+function bootstrapConfidenceInterval(data, confidence = 0.95, iterations = 10000) {
+    if (data.length < 2) return { lower: NaN, upper: NaN };
+    
+    // 函数计算数组的中位数
+    const calculateMedian = arr => {
+        const sorted = [...arr].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 === 0 
+            ? (sorted[mid - 1] + sorted[mid]) / 2 
+            : sorted[mid];
+    };
+    
+    // 有放回抽样函数
+    const sample = (arr) => {
+        const result = new Array(arr.length);
+        for (let i = 0; i < arr.length; i++) {
+            result[i] = arr[Math.floor(Math.random() * arr.length)];
+        }
+        return result;
+    };
+    
+    // 生成bootstrap样本并计算中位数
+    const bootstrapMedians = new Array(iterations);
+    for (let i = 0; i < iterations; i++) {
+        bootstrapMedians[i] = calculateMedian(sample(data));
+    }
+    
+    // 排序中位数，找到基于百分位的置信区间
+    bootstrapMedians.sort((a, b) => a - b);
+    
+    const alpha = 1 - confidence;
+    const lowerIndex = Math.floor((alpha / 2) * iterations);
+    const upperIndex = Math.floor((1 - alpha / 2) * iterations);
+    
+    return {
+        lower: bootstrapMedians[lowerIndex],
+        upper: bootstrapMedians[upperIndex]
+    };
+}
+
 // 导出所有功能
 window.F1Utils = {
+    // 常量
     TEAM_MAPPING,
+    
+    // API和数据获取
+    testJolpicaApi,
     fetchData,
     getSeasons,
     getConstructors,
     getQualifying,
+    
+    // 车队处理
     normalizeTeamName,
+    
+    // 时间处理
+    millisecondsToStruct,
     convertTimeString,
+    
+    // 车手相关
+    newDriver,
     getDriverBestTime,
     compareQualifyingTimes,
-    calculateMedian
+    
+    // UI 元素
+    newTd,
+    
+    // 统计分析
+    calculateMedian,
+    calculateAverage,
+    bootstrapConfidenceInterval
 };
