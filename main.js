@@ -43,15 +43,15 @@ async function fetchData(url){
 }
 
 async function getSeasons(){
-    return fetchData("https://jolpica-f1.com/api/seasons.json?offset=44&limit=100");
+    return fetchData("http://api.jolpi.ca/ergast/f1/seasons.json?offset=44&limit=100");
 }
 
 async function getConstructors(year){
-    return fetchData(`https://jolpica-f1.com/api/${year}/constructors.json`);
+    return fetchData(`http://api.jolpi.ca/ergast/f1/${year}/constructors.json`);
 }
 
 async function getQualifying(year, constructorId){
-    return fetchData(`https://jolpica-f1.com/api/${year}/constructors/${constructorId}/qualifying.json?limit=60`);
+    return fetchData(`http://api.jolpi.ca/ergast/f1/${year}/constructors/${constructorId}/qualifying.json?limit=60`);
 }
 
 // Update constructors list
