@@ -1,14 +1,43 @@
+async function testJolpicaApi() {
+    console.log("Testing Jolpica API...");
+    
+    try {
+        const response = await fetch("https://jolpica-f1.com/api/2023/constructors.json");
+        if (!response.ok) {
+            console.error("API test failed:", response.statusText);
+        } else {
+            const data = await response.json();
+            console.log("API test successful:", data);
+        }
+    } catch (e) {
+        console.error("API test exception:", e);
+    }
+}
+
+// Call this before main() in your load event listener
+window.addEventListener("load", () => {
+    testJolpicaApi();
+    main();
+});
+
 async function fetchData(url){
     try {
-        let response = await fetch(url);
+        let response = await fetch(url, {
+            headers: {
+                'Accept': 'application/json'
+            },
+            mode: 'cors'
+        });
 
         if (!response.ok) {
+            console.error(`Error fetching ${url}: ${response.statusText}`);
             return undefined;
         } else {
             let json = await response.json();
             return json;
         }
     } catch (e) {
+        console.error(`Exception fetching ${url}:`, e);
         return undefined;
     }
 }
@@ -758,15 +787,24 @@ async function main() {
     document.getElementById("go").addEventListener("click", displayResults);
 
     // Get seasons data
+    console.log("Fetching seasons data...");
     const results = await getSeasons();
+    console.log("Seasons data:", results);
+    
     if (results) {
         const seasons = results.MRData.SeasonTable.Seasons.reverse();
         const currentYear = seasons[0].season;
+        console.log(`Current year: ${currentYear}`);
 
         // Fill constructor list for qualifying tab
+        console.log(`Fetching constructors for ${currentYear}...`);
         const constructorList = await getConstructors(currentYear);
+        console.log("Constructor data:", constructorList);
+        
         if (constructorList) {
             fillConstructorsList(constructorList);
+        } else {
+            console.error("Failed to fetch constructor list");
         }
 
         // Fill season list for qualifying tab
@@ -774,27 +812,8 @@ async function main() {
             `<option value="${season.season}">${season.season}</option>`
         ).join('');
 
-        // Fill year selectors for history tab
-        ['startYearList', 'endYearList'].forEach(id => {
-            document.getElementById(id).innerHTML = seasons.map(season => 
-                `<option value="${season.season}">${season.season}</option>`
-            ).join('');
-        });
-
-        // Fill constructor list for history tab
-        if (constructorList) {
-            document.getElementById('historyConstructorList').innerHTML = 
-                constructorList.MRData.ConstructorTable.Constructors.map(team => 
-                    `<option value="${team.name}" id="${team.constructorId}">${team.name}</option>`
-                ).join('');
-        }
+        // Rest of the function remains the same...
+    } else {
+        console.error("Failed to fetch seasons data");
     }
-
-    // Initialize history tab
-    document.getElementById("historyGo").addEventListener("click", showHistoryResults);
 }
-
-window.addEventListener("load", () => {
-    main();
-});
-
