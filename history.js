@@ -132,6 +132,29 @@ async function getActualTeamName(year, constructorId) {
     return constructorId;
 }
 
+// 获取车手本赛季积分
+async function getDriverPoints(year, driverId) {
+    try {
+        const response = await F1Utils.fetchData(`https://api.jolpi.ca/ergast/f1/${year}/driverStandings.json`);
+        
+        if (response && response.MRData && response.MRData.StandingsTable && 
+            response.MRData.StandingsTable.StandingsLists && 
+            response.MRData.StandingsTable.StandingsLists.length > 0) {
+            
+            const standings = response.MRData.StandingsTable.StandingsLists[0].DriverStandings;
+            const driverStanding = standings.find(standing => standing.Driver.driverId === driverId);
+            
+            if (driverStanding) {
+                return parseInt(driverStanding.points);
+            }
+        }
+        return 0; // Default if no points found
+    } catch (error) {
+        console.error(`获取${year}年车手${driverId}积分失败:`, error);
+        return 0;
+    }
+}
+
 // 处理单年度数据
 async function processYearData(year, actualConstructorId, normalizedName) {
     const data = await F1Utils.getQualifying(year, actualConstructorId);
@@ -143,6 +166,8 @@ async function processYearData(year, actualConstructorId, normalizedName) {
     
     let driver1 = null;
     let driver2 = null;
+    let driver1Id = null;
+    let driver2Id = null;
     
     // 处理每场比赛数据
     data.MRData.RaceTable.Races.forEach(race => {
@@ -155,6 +180,8 @@ async function processYearData(year, actualConstructorId, normalizedName) {
         if (!driver1 && !driver2) {
             driver1 = `${race.QualifyingResults[0].Driver.givenName} ${race.QualifyingResults[0].Driver.familyName}`;
             driver2 = `${race.QualifyingResults[1].Driver.givenName} ${race.QualifyingResults[1].Driver.familyName}`;
+            driver1Id = race.QualifyingResults[0].Driver.driverId;
+            driver2Id = race.QualifyingResults[1].Driver.driverId;
         }
 
         const d1Times = F1Utils.getDriverBestTime(race.QualifyingResults[0]);
@@ -189,12 +216,28 @@ async function processYearData(year, actualConstructorId, normalizedName) {
     const teamNameDisplay = actualTeamName !== normalizedName ? 
         `${actualTeamName} (${normalizedName})` : actualTeamName;
         
-    // 确定行样式
-    let rowClass = '';
+    // 设置车手单元格的样式
+    let driver1Style = '';
+    let driver2Style = '';
+    
     if (driver1Wins > (totalRaces - driver1Wins)) {
-        rowClass = 'style="background-color: rgba(133, 255, 120, 0.3);"';
+        driver1Style = 'style="background-color: rgba(133, 255, 120, 0.6);"';
+        driver2Style = 'style="background-color: rgba(255, 120, 120, 0.6);"';
     } else if (driver1Wins < (totalRaces - driver1Wins)) {
-        rowClass = 'style="background-color: rgba(255, 120, 120, 0.3);"';
+        driver1Style = 'style="background-color: rgba(255, 120, 120, 0.6);"';
+        driver2Style = 'style="background-color: rgba(133, 255, 120, 0.6);"';
+    }
+    
+    // 获取车手积分
+    const driver1Points = await getDriverPoints(year, driver1Id);
+    const driver2Points = await getDriverPoints(year, driver2Id);
+    
+    // 设置积分单元格的样式
+    let pointsStyle = '';
+    if (driver1Points > driver2Points) {
+        pointsStyle = 'style="background-color: rgba(133, 255, 120, 0.4);"';
+    } else if (driver1Points < driver2Points) {
+        pointsStyle = 'style="background-color: rgba(255, 120, 120, 0.4);"';
     }
     
     return {
@@ -205,7 +248,11 @@ async function processYearData(year, actualConstructorId, normalizedName) {
         medianGap,
         driver1Wins,
         totalRaces,
-        rowClass
+        driver1Style,
+        driver2Style,
+        driver1Points,
+        driver2Points,
+        pointsStyle
     };
 }
 
@@ -272,13 +319,14 @@ async function showHistoryResults() {
     const tableRows = yearDataResults
         .filter(result => result !== null)
         .map(data => `
-            <tr ${data.rowClass}>
+            <tr>
                 <td>${data.year}</td>
                 <td>${data.teamNameDisplay}</td>
-                <td>${data.driver1 || "N/A"}</td>
-                <td>${data.driver2 || "N/A"}</td>
+                <td ${data.driver1Style}>${data.driver1 || "N/A"}</td>
+                <td ${data.driver2Style}>${data.driver2 || "N/A"}</td>
                 <td>${data.medianGap.toFixed(3)}%</td>
                 <td>${data.driver1Wins} - ${data.totalRaces - data.driver1Wins}</td>
+                <td ${data.pointsStyle}>${data.driver1Points} - ${data.driver2Points}</td>
             </tr>
         `);
 
@@ -294,6 +342,7 @@ async function showHistoryResults() {
                     <th>车手 2</th>
                     <th>中位数差距 %</th>
                     <th>排位赛成绩</th>
+                    <th>赛季积分</th>
                 </tr>
                 ${tableRows.join('')}
             </table>
