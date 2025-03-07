@@ -135,28 +135,112 @@ async function getActualTeamName(year, constructorId) {
 // 获取车手本赛季积分
 async function getDriverPoints(year, driverId) {
     try {
+        console.log(`尝试获取${year}年车手${driverId}的积分...`);
         const response = await F1Utils.fetchData(`https://api.jolpi.ca/ergast/f1/${year}/driverStandings.json`);
         
-        if (response && response.MRData && response.MRData.StandingsTable && 
-            response.MRData.StandingsTable.StandingsLists && 
-            response.MRData.StandingsTable.StandingsLists.length > 0) {
-            
-            const standings = response.MRData.StandingsTable.StandingsLists[0].DriverStandings;
-            const driverStanding = standings.find(standing => standing.Driver.driverId === driverId);
-            
-            if (driverStanding) {
-                return parseInt(driverStanding.points);
-            }
+        if (!response) {
+            console.error(`获取${year}年积分数据失败: API返回为空`);
+            return 0;
         }
-        return 0; // Default if no points found
+        
+        if (!response.MRData || !response.MRData.StandingsTable) {
+            console.error(`获取${year}年积分数据失败: 数据格式不正确`, response);
+            return 0;
+        }
+        
+        if (!response.MRData.StandingsTable.StandingsLists || 
+            response.MRData.StandingsTable.StandingsLists.length === 0) {
+            console.error(`获取${year}年积分数据失败: StandingsLists为空`);
+            return 0;
+        }
+        
+        const standings = response.MRData.StandingsTable.StandingsLists[0].DriverStandings;
+        console.log(`${year}年共有${standings.length}名车手有积分记录`);
+        
+        let driverStanding = standings.find(standing => standing.Driver.driverId === driverId);
+        
+        if (!driverStanding) {
+            console.error(`${year}年找不到车手${driverId}的积分记录`);
+            // 输出所有可用的车手ID，帮助调试
+            console.log('可用车手ID:', standings.map(s => s.Driver.driverId).join(', '));
+            return 0;
+        }
+        
+        const points = parseInt(driverStanding.points);
+        console.log(`${year}年车手${driverId}的积分: ${points}`);
+        return points;
     } catch (error) {
         console.error(`获取${year}年车手${driverId}积分失败:`, error);
         return 0;
     }
 }
 
-// 处理单年度数据
-async function processYearData(year, actualConstructorId, normalizedName) {
+// 查找给定年份和车队的所有车手对
+async function findDriverPairs(year, constructorId) {
+    try {
+        const qualifyingData = await F1Utils.getQualifying(year, constructorId);
+        if (!qualifyingData || !qualifyingData.MRData || !qualifyingData.MRData.RaceTable || !qualifyingData.MRData.RaceTable.Races) {
+            console.error(`获取${year}年车队${constructorId}的排位赛数据失败`);
+            return [];
+        }
+
+        // 收集该赛季所有车手
+        const allDrivers = new Set();
+        const driverInfo = {};
+        
+        qualifyingData.MRData.RaceTable.Races.forEach(race => {
+            if (!race.QualifyingResults) return;
+            
+            race.QualifyingResults.forEach(result => {
+                const driverId = result.Driver.driverId;
+                allDrivers.add(driverId);
+                
+                if (!driverInfo[driverId]) {
+                    driverInfo[driverId] = {
+                        id: driverId,
+                        name: `${result.Driver.givenName} ${result.Driver.familyName}`,
+                        races: []
+                    };
+                }
+                
+                driverInfo[driverId].races.push(race.round);
+            });
+        });
+        
+        // 找出所有可能的车手配对
+        const driverList = Array.from(allDrivers);
+        const driverPairs = [];
+        
+        // 确定哪些车手同时参加了哪些比赛
+        for (let i = 0; i < driverList.length; i++) {
+            for (let j = i + 1; j < driverList.length; j++) {
+                const driver1 = driverInfo[driverList[i]];
+                const driver2 = driverInfo[driverList[j]];
+                
+                // 找出两位车手共同参加的比赛
+                const commonRaces = driver1.races.filter(race => driver2.races.includes(race));
+                
+                if (commonRaces.length > 0) {
+                    driverPairs.push({
+                        driver1,
+                        driver2,
+                        commonRaces
+                    });
+                    
+                    console.log(`${year}年发现车手组合: ${driver1.name} vs ${driver2.name}, 共同参赛: ${commonRaces.length}场`);
+                }
+            }
+        }
+        
+        return driverPairs;
+    } catch (error) {
+        console.error(`查找${year}年车队${constructorId}的车手对失败:`, error);
+        return [];
+    }
+}
+
+// 处理单年度单车手对数据
+async function processDriverPairData(year, actualConstructorId, normalizedName, driverPair) {
     const data = await F1Utils.getQualifying(year, actualConstructorId);
     if (!data?.MRData.RaceTable.Races.length) return null;
 
@@ -164,28 +248,21 @@ async function processYearData(year, actualConstructorId, normalizedName) {
     let driver1Wins = 0;
     let totalRaces = 0;
     
-    let driver1 = null;
-    let driver2 = null;
-    let driver1Id = null;
-    let driver2Id = null;
+    const driver1 = driverPair.driver1;
+    const driver2 = driverPair.driver2;
     
     // 处理每场比赛数据
     data.MRData.RaceTable.Races.forEach(race => {
-        if (race.QualifyingResults.length !== 2) return;
-
-        // 确保始终按照同样的顺序排列车手
-        race.QualifyingResults.sort((a, b) => a.Driver.driverId.localeCompare(b.Driver.driverId));
+        // 检查这两位车手是否都参加了这场比赛
+        if (!driverPair.commonRaces.includes(race.round)) return;
         
-        // 第一次遇到时记录车手信息
-        if (!driver1 && !driver2) {
-            driver1 = `${race.QualifyingResults[0].Driver.givenName} ${race.QualifyingResults[0].Driver.familyName}`;
-            driver2 = `${race.QualifyingResults[1].Driver.givenName} ${race.QualifyingResults[1].Driver.familyName}`;
-            driver1Id = race.QualifyingResults[0].Driver.driverId;
-            driver2Id = race.QualifyingResults[1].Driver.driverId;
-        }
+        const driver1Result = race.QualifyingResults.find(r => r.Driver.driverId === driver1.id);
+        const driver2Result = race.QualifyingResults.find(r => r.Driver.driverId === driver2.id);
+        
+        if (!driver1Result || !driver2Result) return;
 
-        const d1Times = F1Utils.getDriverBestTime(race.QualifyingResults[0]);
-        const d2Times = F1Utils.getDriverBestTime(race.QualifyingResults[1]);
+        const d1Times = F1Utils.getDriverBestTime(driver1Result);
+        const d2Times = F1Utils.getDriverBestTime(driver2Result);
         
         const comparison = F1Utils.compareQualifyingTimes(d1Times, d2Times);
         
@@ -229,8 +306,8 @@ async function processYearData(year, actualConstructorId, normalizedName) {
     }
     
     // 获取车手积分
-    const driver1Points = await getDriverPoints(year, driver1Id);
-    const driver2Points = await getDriverPoints(year, driver2Id);
+    const driver1Points = await getDriverPoints(year, driver1.id);
+    const driver2Points = await getDriverPoints(year, driver2.id);
     
     // 设置积分单元格的样式
     let pointsStyle = '';
@@ -243,8 +320,8 @@ async function processYearData(year, actualConstructorId, normalizedName) {
     return {
         year,
         teamNameDisplay,
-        driver1,
-        driver2,
+        driver1: driver1.name,
+        driver2: driver2.name,
         medianGap,
         driver1Wins,
         totalRaces,
@@ -277,9 +354,14 @@ async function showHistoryResults() {
         return;
     }
 
-    // 显示加载状态
+    // 显示加载状态 - 使用现代加载动画
     const historyTable = document.getElementById('historyTable');
-    historyTable.innerHTML = '<div style="text-align: center; padding: 20px;">加载中...</div>';
+    historyTable.innerHTML = `
+        <div class="loading-container">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">加载中...</div>
+        </div>
+    `;
 
     // 获取车队连续性信息
     const continuityInfo = await getTeamContinuity(startYear, endYear);
@@ -306,17 +388,26 @@ async function showHistoryResults() {
     }
     
     // 处理所有年份数据
-    const yearDataPromises = [];
+    const allPairsDataPromises = [];
+    
     for (let year = startYear; year <= endYear; year++) {
         const actualConstructorId = mappedConstructorIds[year] || constructorId;
         if (!actualConstructorId) continue;
         
-        yearDataPromises.push(processYearData(year, actualConstructorId, normalizedName));
+        // 为每一年找出所有车手对
+        const driverPairs = await findDriverPairs(year, actualConstructorId);
+        
+        // 为每个车手对处理数据
+        driverPairs.forEach(pair => {
+            allPairsDataPromises.push(
+                processDriverPairData(year, actualConstructorId, normalizedName, pair)
+            );
+        });
     }
     
-    // 等待所有年份数据处理完成
-    const yearDataResults = await Promise.all(yearDataPromises);
-    const tableRows = yearDataResults
+    // 等待所有年份和车手对的数据处理完成
+    const allPairsResults = await Promise.all(allPairsDataPromises);
+    const tableRows = allPairsResults
         .filter(result => result !== null)
         .map(data => `
             <tr>
