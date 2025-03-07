@@ -8,7 +8,8 @@ body {
 .flex-title,
 .flex-container-table,
 .tab-button,
-.comparison-header {
+.comparison-header,
+.loading-text {
     font-family: 'Noto Sans SC', 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
 }
 
@@ -289,6 +290,37 @@ td {
 .main-chart {
     width: 100%;
     height: 400px;
+}
+
+/* Modern loading animation */
+.loading-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    padding: 40px 0;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 3px solid rgba(0, 0, 0, 0.1);
+    border-top-color: #4a4a4a;
+    animation: spin 1s ease-in-out infinite;
+    margin-bottom: 15px;
+}
+
+.loading-text {
+    font-size: 16px;
+    color: #4a4a4a;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* Media Queries */
