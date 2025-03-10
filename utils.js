@@ -7,6 +7,7 @@ const TEAM_MAPPING = {
     "Visa Cash App RB": "Red Bull Junior Team",
     "VCARB": "Red Bull Junior Team",
     "RB": "Red Bull Junior Team",
+    "RB F1 Team": "Red Bull Junior Team", 
     
     // Mercedes系列
     "Brawn": "Mercedes",
