@@ -171,82 +171,45 @@ async function getDriverStanding(year, driverId) {
 }
 
 // 获取车手本赛季积分
-async function getDriverPoints(year, driverId, commonRaceRounds = null) {
+async function getDriverPoints(year, driverId) {
     try {
         console.log(`尝试获取${year}年车手${driverId}的积分...`);
         const response = await F1Utils.fetchData(`https://api.jolpi.ca/ergast/f1/${year}/driverStandings.json`);
         
         if (!response) {
             console.error(`获取${year}年积分数据失败: API返回为空`);
-            return { total: 0, filtered: 0 };
+            return 0;
         }
         
-        // 获取车手年度总积分
-        let totalPoints = 0;
-        if (response.MRData && 
-            response.MRData.StandingsTable && 
-            response.MRData.StandingsTable.StandingsLists && 
-            response.MRData.StandingsTable.StandingsLists.length > 0) {
-            
-            const standings = response.MRData.StandingsTable.StandingsLists[0].DriverStandings;
-            const driverStanding = standings.find(standing => standing.Driver.driverId === driverId);
-            
-            if (driverStanding) {
-                totalPoints = parseInt(driverStanding.points);
-                console.log(`${year}年车手${driverId}的年度总积分: ${totalPoints}`);
-            }
+        if (!response.MRData || !response.MRData.StandingsTable) {
+            console.error(`获取${year}年积分数据失败: 数据格式不正确`, response);
+            return 0;
         }
         
-        // 如果没有指定共同比赛轮次，返回年度总积分
-        if (!commonRaceRounds || commonRaceRounds.length === 0) {
-            return { total: totalPoints, filtered: totalPoints };
+        if (!response.MRData.StandingsTable.StandingsLists || 
+            response.MRData.StandingsTable.StandingsLists.length === 0) {
+            console.error(`获取${year}年积分数据失败: StandingsLists为空`);
+            return 0;
         }
         
-        // 获取指定轮次的积分
-        let filteredPoints = 0;
-        const raceResults = await Promise.all(
-            commonRaceRounds.map(round => 
-                F1Utils.fetchData(`https://api.jolpi.ca/ergast/f1/${year}/${round}/results.json`)
-            )
-        );
+        const standings = response.MRData.StandingsTable.StandingsLists[0].DriverStandings;
+        console.log(`${year}年共有${standings.length}名车手有积分记录`);
         
-        // 主要比赛积分
-        for (const result of raceResults) {
-            if (result && result.MRData && result.MRData.RaceTable && result.MRData.RaceTable.Races) {
-                for (const race of result.MRData.RaceTable.Races) {
-                    const driverResult = race.Results.find(r => r.Driver.driverId === driverId);
-                    if (driverResult && driverResult.points) {
-                        filteredPoints += parseFloat(driverResult.points);
-                    }
-                }
-            }
+        let driverStanding = standings.find(standing => standing.Driver.driverId === driverId);
+        
+        if (!driverStanding) {
+            console.error(`${year}年找不到车手${driverId}的积分记录`);
+            // 输出所有可用的车手ID，帮助调试
+            console.log('可用车手ID:', standings.map(s => s.Driver.driverId).join(', '));
+            return 0;
         }
         
-        // 冲刺赛积分
-        const sprintResults = await Promise.all(
-            commonRaceRounds.map(round => 
-                F1Utils.fetchData(`https://api.jolpi.ca/ergast/f1/${year}/${round}/sprint.json`)
-            )
-        );
-        
-        for (const result of sprintResults) {
-            if (result && result.MRData && result.MRData.RaceTable && result.MRData.RaceTable.Races) {
-                for (const race of result.MRData.RaceTable.Races) {
-                    if (!race.SprintResults) continue;
-                    const driverResult = race.SprintResults.find(r => r.Driver.driverId === driverId);
-                    if (driverResult && driverResult.points) {
-                        filteredPoints += parseFloat(driverResult.points);
-                    }
-                }
-            }
-        }
-        
-        console.log(`${year}年车手${driverId}在指定${commonRaceRounds.length}个轮次中的积分: ${filteredPoints}`);
-        return { total: totalPoints, filtered: Math.round(filteredPoints) };
-        
+        const points = parseInt(driverStanding.points);
+        console.log(`${year}年车手${driverId}的积分: ${points}`);
+        return points;
     } catch (error) {
         console.error(`获取${year}年车手${driverId}积分失败:`, error);
-        return { total: 0, filtered: 0 };
+        return 0;
     }
 }
 
@@ -330,9 +293,6 @@ async function processDriverPairData(year, actualConstructorId, normalizedName, 
     const driver1Code = await getDriverCode(driver1.id, year);
     const driver2Code = await getDriverCode(driver2.id, year);
     
-    // 获取这两位车手共同参加的轮次
-    const commonRaceRounds = driverPair.commonRaces;
-    
     // 处理每场比赛数据
     data.MRData.RaceTable.Races.forEach(race => {
         // 检查这两位车手是否都参加了这场比赛
@@ -370,25 +330,18 @@ async function processDriverPairData(year, actualConstructorId, normalizedName, 
     // 计算中位数
     const medianGap = F1Utils.calculateMedian(timeGaps);
     
-    // 获取车手积分和排名
-    const driver1Points = await getDriverPoints(year, driver1.id, commonRaceRounds);
-    const driver2Points = await getDriverPoints(year, driver2.id, commonRaceRounds);
+    // 获取车手积分
+    const driver1Points = await getDriverPoints(year, driver1.id);
+    const driver2Points = await getDriverPoints(year, driver2.id);
     
     // 获取车手排名
     const driver1Standing = await getDriverStanding(year, driver1.id);
     const driver2Standing = await getDriverStanding(year, driver2.id);
     
     // 计算积分占比
-    const totalTeamPoints = driver1Points.filtered + driver2Points.filtered;
-    const driver1Percentage = totalTeamPoints > 0 ? Math.round((driver1Points.filtered / totalTeamPoints) * 100) : 0;
-    const driver2Percentage = totalTeamPoints > 0 ? Math.round((driver2Points.filtered / totalTeamPoints) * 100) : 0;
-    
-    // 确定是否需要积分说明工具提示
-    const needsPointsTooltip = driver1Points.total !== driver1Points.filtered || 
-                              driver2Points.total !== driver2Points.filtered;
-    
-    const pointsTooltip = needsPointsTooltip ? 
-        `该积分仅计算了${driver1Code}与${driver2Code}共同参赛的${commonRaceRounds.length}个轮次` : '';
+    const totalTeamPoints = driver1Points + driver2Points;
+    const driver1Percentage = totalTeamPoints > 0 ? Math.round((driver1Points / totalTeamPoints) * 100) : 0;
+    const driver2Percentage = totalTeamPoints > 0 ? Math.round((driver2Points / totalTeamPoints) * 100) : 0;
     
     // 获取实际车队名称
     const actualTeamName = await getActualTeamName(year, actualConstructorId);
@@ -405,17 +358,12 @@ async function processDriverPairData(year, actualConstructorId, normalizedName, 
         medianGap,
         driver1Wins,
         totalRaces,
-        driver1Points: driver1Points.filtered,
-        driver2Points: driver2Points.filtered,
-        driver1TotalPoints: driver1Points.total,
-        driver2TotalPoints: driver2Points.total,
+        driver1Points,
+        driver2Points,
         driver1Standing,
         driver2Standing,
         driver1Percentage,
-        driver2Percentage,
-        needsPointsTooltip,
-        pointsTooltip,
-        commonRaceCount: commonRaceRounds.length
+        driver2Percentage
     };
 }
 
@@ -516,10 +464,6 @@ async function showHistoryResults() {
             const driver2PointsStyle = pointsWinner === 2 ? 'color: #3CB371; font-weight: bold;' : 
                                     pointsWinner === 1 ? 'color: #FF6B6B; font-weight: bold;' : 'font-weight: bold;';
             
-            // 积分工具提示
-            const pointsTooltip = data.needsPointsTooltip ? 
-                `title="${data.pointsTooltip}" style="cursor: help; text-decoration: underline dotted;"` : '';
-            
             // 确定车手排名领先方
             const standingWinner = parseInt(data.driver1Standing) < parseInt(data.driver2Standing) ? 1 : 
                                 parseInt(data.driver1Standing) > parseInt(data.driver2Standing) ? 2 : 0;
@@ -530,32 +474,7 @@ async function showHistoryResults() {
             const driver2StandingStyle = standingWinner === 2 ? 'color: #3CB371; font-weight: bold;' : 
                                       standingWinner === 1 ? 'color: #FF6B6B; font-weight: bold;' : 'font-weight: bold;';
                                       
-            return `
-                <tr>
-                    <td>${data.year}</td>
-                    <td>${data.teamNameDisplay}</td>
-                    <td>${data.driver1 || "N/A"}</td>
-                    <td>${data.driver2 || "N/A"}</td>
-                    <td>${data.medianGap.toFixed(3)}%</td>
-                    <td>
-                        <span style="${driver1QualiStyle}">${data.driver1Code}</span> 
-                        ${data.driver1Wins} - ${data.totalRaces - data.driver1Wins} 
-                        <span style="${driver2QualiStyle}">${data.driver2Code}</span>
-                    </td>
-                    <td ${pointsTooltip}>
-                        <span style="${driver1PointsStyle}">${data.driver1Code}</span> 
-                        ${data.driver1Points} - ${data.driver2Points} 
-                        <span style="${driver2PointsStyle}">${data.driver2Code}</span>
-                        ${data.needsPointsTooltip ? '<sup>*</sup>' : ''}
-                    </td>
-                    <td>
-                        <span style="${driver1StandingStyle}">${data.driver1Code}</span> 
-                        ${data.driver1Standing} - ${data.driver2Standing} 
-                        <span style="${driver2StandingStyle}">${data.driver2Code}</span>
-                    </td>
-                    <td>${data.driver1Percentage}% - ${data.driver2Percentage}%</td>
-                </tr>
-            `;
+            return `<tr><td>${data.year}</td><td>${data.teamNameDisplay}</td><td>${data.driver1 || "N/A"}</td><td>${data.driver2 || "N/A"}</td><td>${data.medianGap.toFixed(3)}%</td><td><span style="${driver1QualiStyle}">${data.driver1Code}</span> ${data.driver1Wins} - ${data.totalRaces - data.driver1Wins} <span style="${driver2QualiStyle}">${data.driver2Code}</span></td><td><span style="${driver1PointsStyle}">${data.driver1Code}</span> ${data.driver1Points} - ${data.driver2Points} <span style="${driver2PointsStyle}">${data.driver2Code}</span></td><td><span style="${driver1StandingStyle}">${data.driver1Code}</span> ${data.driver1Standing} - ${data.driver2Standing} <span style="${driver2StandingStyle}">${data.driver2Code}</span></td><td>${data.driver1Percentage}% - ${data.driver2Percentage}%</td></tr>`;
         });
 
     // 显示结果或无数据消息
@@ -576,8 +495,6 @@ async function showHistoryResults() {
                 </tr>
                 ${tableRows.join('')}
             </table>
-            ${allPairsResults.some(r => r && r.needsPointsTooltip) ? 
-                '<div class="tooltip-note"><sup>*</sup> 积分仅计算了两位车手共同参赛的轮次</div>' : ''}
         `;
     } else {
         historyTable.innerHTML = `
@@ -591,17 +508,11 @@ async function showHistoryResults() {
 function addCustomStyles() {
     const styleElement = document.createElement('style');
     styleElement.textContent = `
-        .tooltip-note {
-            font-size: 0.9em;
-            color: #666;
-            margin-top: 10px;
-            text-align: center;
-        }
-        
         .history-table th,
         .history-table td {
             padding: 8px 10px;
             text-align: center;
+            white-space: nowrap;
         }
         
         .history-table td:nth-child(3),
