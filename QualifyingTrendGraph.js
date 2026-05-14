@@ -2,8 +2,11 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
     // Base state
     const state = {
         filteredData: [...data],
-        excludedPoints: [],
-        currentSegments: 3,
+        // Manual exclusions from external UI (identified by x value, i.e., sequence number)
+        manualExcluded: new Set(),
+        // Manual inclusions to override threshold filtering
+        manualIncluded: new Set(),
+        currentSegments: 1,
         activeThreshold: 2,
         trendOnlyGraph: null,
         mainChart: null,
@@ -165,7 +168,7 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
         const totalPoints = data.length;
         const pointsPerSegment = Math.ceil(totalPoints / state.currentSegments);
         
-        const colors = ['#3cb371', '#1e90ff', '#ff6b6b', '#ffd700'];
+        const colors = ['#3cb371', '#1e90ff', '#ff6b6b', '#ffd700', '#8a2be2', '#ff8c00', '#00bcd4', '#2f4f4f'];
         const segments = [];
 
         for (let i = 0; i < state.currentSegments; i++) {
@@ -186,9 +189,12 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
                 
                 let numerator = 0;
                 let denominator = 0;
+                let ssTot = 0;
+                let ssRes = 0; // will compute after slope/intercept
                 for (let j = 0; j < xValues.length; j++) {
                     numerator += (xValues[j] - xMean) * (yValues[j] - yMean);
                     denominator += Math.pow(xValues[j] - xMean, 2);
+                    ssTot += Math.pow(yValues[j] - yMean, 2);
                 }
                 
                 const slope = numerator / denominator;
@@ -206,6 +212,15 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
                         trendData.push([x, Number(y.toFixed(3))]);
                     }
                 }
+                // Compute residuals and R^2
+                for (let j = 0; j < xValues.length; j++) {
+                    const yHat = slope * xValues[j] + intercept;
+                    ssRes += Math.pow(yValues[j] - yHat, 2);
+                }
+                const r2 = ssTot > 0 ? 1 - (ssRes / ssTot) : 1;
+                const startY = slope * firstX + intercept;
+                const endY = slope * lastX + intercept;
+                const delta = endY - startY;
                 
                 segments.push({
                     name: `Trend ${state.currentSegments > 1 ? (i + 1) : ''}`,
@@ -213,7 +228,17 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
                     dashStyle: 'solid',
                     color: colors[i % colors.length],
                     lineWidth: 4,
-                    marker: { enabled: false }
+                    marker: { enabled: false },
+                    custom: {
+                        slope,
+                        intercept,
+                        r2,
+                        startX: firstX,
+                        endX: lastX,
+                        startY,
+                        endY,
+                        delta
+                    }
                 });
             }
         }
@@ -235,7 +260,7 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
         segmentControl.appendChild(segmentLabel);
         
         const segmentSelect = createSelect(
-            [1, 2, 3, 4].map(n => ({ value: n, text: n })),
+            [1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ value: n, text: n })),
             e => {
                 state.currentSegments = parseInt(e.target.value);
                 updateCharts();
@@ -271,6 +296,11 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
             createButton('Trend', toggleTrend),
             createButton('Separate Trend', toggleSeparateTrend)
         ];
+        // Set initial visual states to match defaults
+        buttons[0].classList.add('active-button'); // zero line red by default
+        if (state.showTrendInMain) {
+            buttons[1].classList.add('active-button');
+        }
         buttons.forEach(button => buttonGroup.appendChild(button));
         controlRow.appendChild(buttonGroup);
         
@@ -280,6 +310,7 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
     // Update charts with current data
     function updateCharts() {
         const chartData = prepareChartData();
+        renderTrendStats(chartData.trends);
         
         // Update main chart
         if (state.mainChart) {
@@ -399,11 +430,17 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
     }
 
     function prepareChartData() {
-        const filteredFullData = state.filteredData.map((point, index) => {
-            if (state.activeThreshold && Math.abs(point[1]) > state.activeThreshold) {
-                return [point[0], null];
+        const filteredFullData = state.filteredData.map((point) => {
+            const seq = point[0];
+            const val = point[1];
+            const overThreshold = state.activeThreshold && Math.abs(val) > state.activeThreshold;
+            const manuallyExcluded = state.manualExcluded.has(seq);
+            const manuallyIncluded = state.manualIncluded.has(seq);
+            // Exclusion priority: manualExcluded > threshold (unless manuallyIncluded overrides threshold)
+            if (manuallyExcluded || (overThreshold && !manuallyIncluded)) {
+                return [seq, null];
             }
-            return [point[0], point[1] !== null ? Number(point[1].toFixed(3)) : null];
+            return [seq, val !== null ? Number(val.toFixed(3)) : null];
         });
         
         const validFilteredData = filteredFullData
@@ -426,11 +463,29 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
     }
 
     // Initialize chart
+    // External controller plumbing
+    const thresholdListeners = new Set();
+    function emitThresholdChange() {
+        thresholdListeners.forEach(fn => {
+            try { fn(state.activeThreshold); } catch (_) { /* ignore */ }
+        });
+    }
+
+    function handleFilterChange(threshold) {
+        state.activeThreshold = threshold || 0;
+        updateCharts();
+        emitThresholdChange();
+    }
+
     function initialize() {
         // Create main chart container
         const mainChartContainer = document.createElement('div');
         mainChartContainer.className = 'main-chart';
         container.appendChild(mainChartContainer);
+        // Create stats container
+        const statsContainer = document.createElement('div');
+        statsContainer.className = 'trend-stats';
+        container.appendChild(statsContainer);
 
         // Create UI controls
         createControls();
@@ -439,7 +494,7 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
         setTimeout(() => {
             // Set defaults
             const segmentSelect = container.querySelector('select');
-            if (segmentSelect) segmentSelect.value = '3';
+            if (segmentSelect) segmentSelect.value = '1';
 
             const filterSelect = container.querySelectorAll('select')[1];
             if (filterSelect) filterSelect.value = '2';
@@ -447,13 +502,7 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
             // Apply initial filter
             handleFilterChange(2);
 
-            // Set active buttons
-            const buttons = container.querySelectorAll('.chart-control-button');
-            if (buttons.length >= 3) {
-                buttons[0].classList.add('active-button'); // Zero line
-                buttons[1].classList.add('active-button'); // Trend
-                buttons[2].click(); // Create separate trend graph
-            }
+            // Buttons already initialized with correct active state in createControls
 
             updateCharts();
         }, 0);
@@ -518,11 +567,131 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
                 width: 100%;
                 height: 400px;
             }
+            .trend-stats {
+                margin-top: 12px;
+                font-size: 13px;
+                color: #333;
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+            .trend-stat-row {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .trend-color {
+                width: 12px;
+                height: 12px;
+                border-radius: 2px;
+                display: inline-block;
+            }
+            .trend-stat-text {
+                line-height: 1.3;
+            }
+            .help-hint {
+                cursor: help;
+                text-decoration: underline dotted;
+                text-underline-offset: 2px;
+            }
         `;
         document.head.appendChild(style);
+    }
+
+    // Public controller to interact with external UI (e.g., per-race checkboxes)
+    const controller = {
+        setExcluded: (seqArray) => {
+            state.manualExcluded = new Set(Array.isArray(seqArray) ? seqArray : []);
+            updateCharts();
+        },
+        setIncluded: (seqArray) => {
+            state.manualIncluded = new Set(Array.isArray(seqArray) ? seqArray : []);
+            updateCharts();
+        },
+        getExcluded: () => Array.from(state.manualExcluded),
+        getIncluded: () => Array.from(state.manualIncluded),
+        getThreshold: () => state.activeThreshold,
+        setThreshold: (threshold) => {
+            // try to sync UI select if present
+            try {
+                const selects = container.querySelectorAll('select');
+                const filterSelect = selects && selects[1];
+                if (filterSelect) {
+                    filterSelect.value = String(threshold || 0);
+                }
+            } catch (_) { /* ignore */ }
+            handleFilterChange(threshold || 0);
+        },
+        onThresholdChange: (fn) => { if (typeof fn === 'function') thresholdListeners.add(fn); return () => thresholdListeners.delete(fn); },
+        refresh: () => updateCharts()
+    };
+
+    // Render trend statistics beneath the chart
+    function renderTrendStats(trends) {
+        const statsRoot = container.querySelector('.trend-stats');
+        if (!statsRoot) return;
+        if (!trends || trends.length === 0) {
+            statsRoot.textContent = 'No trend data available';
+            return;
+        }
+        statsRoot.innerHTML = '';
+        trends.forEach((t, idx) => {
+            const row = document.createElement('div');
+            row.className = 'trend-stat-row';
+            const colorBox = document.createElement('span');
+            colorBox.className = 'trend-color';
+            colorBox.style.backgroundColor = t.color || '#000';
+            const text = document.createElement('span');
+            text.className = 'trend-stat-text';
+            const c = t.custom || {};
+            const slopePerRace = typeof c.slope === 'number' ? c.slope : 0;
+            const delta = typeof c.delta === 'number' ? c.delta : 0;
+            const r2 = typeof c.r2 === 'number' ? c.r2 : NaN;
+            // Build rich, hover-explained metrics
+            const nameNode = document.createTextNode(`${t.name || 'Trend'}: `);
+
+            const slopeSpan = document.createElement('span');
+            slopeSpan.className = 'help-hint';
+            slopeSpan.title = 'Slope: Average change in the qualifying gap per race within this segment. Positive = trending upward (more positive gap); negative = trending downward.';
+            slopeSpan.textContent = `slope ${slopePerRace.toFixed(4)} %/race`;
+
+            const comma1 = document.createTextNode(', ');
+
+            const changeSpan = document.createElement('span');
+            changeSpan.className = 'help-hint';
+            changeSpan.title = 'Change (Δ%): Predicted total change from the first to the last race in this segment based on the trend line.';
+            changeSpan.textContent = `change ${delta >= 0 ? '+' : ''}${delta.toFixed(3)}%`;
+
+            const comma2 = document.createTextNode(', ');
+
+            const r2Span = document.createElement('span');
+            r2Span.className = 'help-hint';
+            r2Span.title = 'R² (coefficient of determination): How well the linear trend explains the variation in the data (1 = perfect fit, 0 = no linear relationship).';
+            r2Span.textContent = `R² ${isNaN(r2) ? 'N/A' : r2.toFixed(3)}`;
+
+            const space = document.createTextNode(' ');
+
+            const spanSpan = document.createElement('span');
+            spanSpan.className = 'help-hint';
+            spanSpan.title = 'Segment span: The race numbers covered by this trend segment (start → end).';
+            spanSpan.textContent = `(${c.startX ?? ''}→${c.endX ?? ''})`;
+
+            text.appendChild(nameNode);
+            text.appendChild(slopeSpan);
+            text.appendChild(comma1);
+            text.appendChild(changeSpan);
+            text.appendChild(comma2);
+            text.appendChild(r2Span);
+            text.appendChild(space);
+            text.appendChild(spanSpan);
+            row.appendChild(colorBox);
+            row.appendChild(text);
+            statsRoot.appendChild(row);
+        });
     }
 
     // Run initialization
     addStyles();
     initialize();
+    return controller;
 }

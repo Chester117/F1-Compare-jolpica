@@ -43,26 +43,223 @@ const TEAM_MAPPING = {
     "MoneyGram Haas F1 Team": "Haas"
 };
 
+// 缓存系统
+const cache = {
+    data: {},
+    get(url) {
+        return this.data[url];
+    },
+    set(url, data) {
+        this.data[url] = data;
+    },
+    has(url) {
+        return Object.prototype.hasOwnProperty.call(this.data, url);
+    },
+    size() {
+        return Object.keys(this.data).length;
+    },
+    clear() {
+        const count = this.size();
+        this.data = {};
+        return count;
+    }
+};
+
+// 全局调试开关（默认关闭）。可在控制台执行 F1Utils.setDebug(true) 打开详细日志
+if (typeof window !== 'undefined' && typeof window.__F1_DEBUG === 'undefined') {
+    window.__F1_DEBUG = false;
+}
+function debugLog(...args) {
+    if (typeof window !== 'undefined' && window.__F1_DEBUG) {
+        try { console.log(...args); } catch (e) { /* noop */ }
+    }
+}
+
+// 请求限制队列
+const requestQueue = [];
+let isProcessingQueue = false;
+// 自适应全局间隔（发生429后提高，逐步衰减）
+let BASE_DELAY_BETWEEN_REQUESTS = 500; // 初始两次请求间隔500毫秒
+let currentDelayBetweenRequests = BASE_DELAY_BETWEEN_REQUESTS;
+const MAX_DELAY_BETWEEN_REQUESTS = 6000; // 上限 6s
+const MIN_DELAY_BETWEEN_REQUESTS = 200;  // 下限 200ms
+let lastBackoffAt = 0;
+
+// 失败请求收集（用于“继续获取”重试）
+const failedRequests = new Set();
+
+// 简单事件系统，供 UI 感知错误/限流
+if (typeof window !== 'undefined') {
+    window.F1RequestEvents = window.F1RequestEvents || {
+        _listeners: { error: [], ratelimit: [] },
+        on(type, fn) {
+            if (!this._listeners[type]) this._listeners[type] = [];
+            this._listeners[type].push(fn);
+            return () => {
+                this._listeners[type] = (this._listeners[type] || []).filter(f => f !== fn);
+            };
+        },
+        emit(type, payload) {
+            try {
+                (this._listeners[type] || []).forEach(fn => {
+                    try { fn(payload); } catch (_) {}
+                });
+            } catch (_) {}
+        }
+    };
+}
+
+// 处理请求队列
+async function processQueue() {
+    if (isProcessingQueue || requestQueue.length === 0) return;
+
+    isProcessingQueue = true;
+
+    while (requestQueue.length > 0) {
+        const { url, resolve, reject, retryCount } = requestQueue.shift();
+
+        try {
+            debugLog(`Fetching: ${url} (Attempt: ${retryCount + 1})`);
+
+            const response = await fetch(url, {
+                headers: {
+                    'Accept': 'application/json'
+                },
+                mode: 'cors'
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                cache.set(url, data);
+                resolve(data);
+                // 成功后尝试缓慢衰减全局延迟
+                currentDelayBetweenRequests = Math.max(MIN_DELAY_BETWEEN_REQUESTS, Math.floor(currentDelayBetweenRequests * 0.9));
+            } else if (response.status === 429 && retryCount < 4) {
+                // 429：读取 Retry-After，指数退避+抖动，并通知 UI
+                const ra = parseInt(response.headers.get('Retry-After') || '0', 10);
+                const suggested = Number.isFinite(ra) && ra > 0 ? ra * 1000 : 0;
+                // 自适应提高全局间隔
+                const now = Date.now();
+                lastBackoffAt = now;
+                if (suggested > 0) {
+                    currentDelayBetweenRequests = Math.min(MAX_DELAY_BETWEEN_REQUESTS, Math.max(currentDelayBetweenRequests, suggested));
+                } else {
+                    currentDelayBetweenRequests = Math.min(MAX_DELAY_BETWEEN_REQUESTS, Math.floor(currentDelayBetweenRequests * 1.6 + 150));
+                }
+                // 抖动
+                const jitter = Math.floor(Math.random() * 300);
+                const waitMs = (suggested || 1500) + jitter;
+                console.warn(`Rate limited for ${url}, retry later (${retryCount + 1}/4). Backoff ${waitMs}ms, global delay=${currentDelayBetweenRequests}ms`);
+                if (typeof window !== 'undefined' && window.F1RequestEvents) {
+                    window.F1RequestEvents.emit('ratelimit', { url, retryCount, waitMs, globalDelay: currentDelayBetweenRequests });
+                }
+                requestQueue.push({ url, resolve, reject, retryCount: retryCount + 1 });
+                await new Promise(r => setTimeout(r, waitMs));
+            } else {
+                console.error(`Error fetching ${url}: ${response.status} ${response.statusText}`);
+                const err = new Error(`Error fetching ${url}: ${response.status} ${response.statusText}`);
+                err.code = response.status === 429 ? 'RATE_LIMIT' : 'HTTP_ERROR';
+                err.status = response.status;
+                err.url = url;
+                failedRequests.add(url);
+                if (typeof window !== 'undefined' && window.F1RequestEvents) {
+                    window.F1RequestEvents.emit('error', { url, code: err.code, status: err.status });
+                }
+                reject(err);
+            }
+        } catch (e) {
+            // 这里一般是网络错误或CORS导致的 TypeError: Failed to fetch
+            const err = e instanceof Error ? e : new Error(String(e));
+            if (!err.code) err.code = 'NETWORK_ERROR';
+            err.url = err.url || url;
+            console.error(`Exception fetching ${url}:`, err);
+            failedRequests.add(url);
+            if (typeof window !== 'undefined' && window.F1RequestEvents) {
+                window.F1RequestEvents.emit('error', { url, code: err.code || 'NETWORK_ERROR' });
+            }
+            reject(err);
+        }
+
+        // 在处理下一个请求前等待一段时间
+        await new Promise(r => setTimeout(r, currentDelayBetweenRequests));
+    }
+
+    isProcessingQueue = false;
+}
+
 // 数据获取函数
 async function fetchData(url) {
-    try {
-        let response = await fetch(url, {
-            headers: {
-                'Accept': 'application/json'
-            },
-            mode: 'cors'
-        });
-
-        if (!response.ok) {
-            console.error(`Error fetching ${url}: ${response.statusText}`);
-            return undefined;
-        } else {
-            return await response.json();
-        }
-    } catch (e) {
-        console.error(`Exception fetching ${url}:`, e);
-        return undefined;
+    // 检查缓存中是否已有数据
+    if (cache.has(url)) {
+        debugLog(`Using cached data for: ${url}`);
+        return cache.get(url);
     }
+
+    // 创建新的请求并添加到队列
+    return new Promise((resolve, reject) => {
+        requestQueue.push({ url, resolve, reject, retryCount: 0 });
+
+        // 开始处理队列（如果尚未处理）
+        if (!isProcessingQueue) {
+            processQueue();
+        }
+    });
+}
+
+// 重试失败的请求（仅针对之前失败过且未缓存成功的 URL）
+async function retryFailedRequests() {
+    const urls = Array.from(failedRequests);
+    if (urls.length === 0) return { retried: 0, settled: [] };
+    failedRequests.clear();
+    const settled = await Promise.allSettled(urls.map(u => fetchData(u)));
+    return { retried: urls.length, settled };
+}
+
+function getFailedRequestsCount() {
+    return failedRequests.size;
+}
+
+function setBaseRateDelay(ms) {
+    if (!Number.isFinite(ms) || ms <= 0) return currentDelayBetweenRequests;
+    BASE_DELAY_BETWEEN_REQUESTS = Math.max(MIN_DELAY_BETWEEN_REQUESTS, Math.min(ms, MAX_DELAY_BETWEEN_REQUESTS));
+    currentDelayBetweenRequests = BASE_DELAY_BETWEEN_REQUESTS;
+    return currentDelayBetweenRequests;
+}
+
+// 缓存管理函数
+function flushFetchCache() {
+    const removed = cache.clear();
+    console.log('[Cache] Cleared fetch cache entries:', removed);
+    return { removed };
+}
+
+function getCacheSummary() {
+    const fetchCacheSize = cache.size();
+    const historySummary = typeof window.getHistoryCacheSummary === 'function' ? window.getHistoryCacheSummary() : {};
+    const raceSummary = typeof window.getRaceCacheSummary === 'function' ? window.getRaceCacheSummary() : {};
+    const summary = {
+        fetchCacheSize,
+        history: historySummary,
+        race: raceSummary
+    };
+    console.log('[Cache] Summary', summary);
+    return summary;
+}
+
+function flushAllCaches() {
+    const result = {
+        fetch: flushFetchCache(),
+        history: null,
+        race: null
+    };
+    if (typeof window.clearHistoryCaches === 'function') {
+        result.history = window.clearHistoryCaches();
+    }
+    if (typeof window.clearRaceCaches === 'function') {
+        result.race = window.clearRaceCaches();
+    }
+    console.log('[Cache] Flushed all caches', result);
+    return result;
 }
 
 // API endpoint functions
@@ -76,6 +273,46 @@ async function getConstructors(year) {
 
 async function getQualifying(year, constructorId) {
     return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/constructors/${constructorId}/qualifying.json?limit=60`);
+}
+
+// 赛历：获取赛季所有分站信息（用于计算当年总场次/轮次）
+async function getSeasonSchedule(year) {
+    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}.json?limit=100`);
+}
+
+// 正赛：获取某赛季某车队在每站的正式比赛结果（用于识别当站的两位车手）
+async function getConstructorResults(year, constructorId) {
+    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/constructors/${constructorId}/results.json?limit=1000`);
+}
+
+// 正赛：获取某位车手在某站的每圈圈速
+async function getRaceLaps(year, round, driverId) {
+    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/${round}/drivers/${driverId}/laps.json?limit=2000`);
+}
+
+// 正赛：获取某位车手在某站的进站信息（用于识别进站圈/出站圈）
+async function getDriverPitStops(year, round, driverId) {
+    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/${round}/drivers/${driverId}/pitstops.json?limit=100`);
+}
+
+// 正赛：获取某站冲刺赛成绩（用于补充积分）
+async function getSprintResults(year, round) {
+    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/${round}/sprint.json?limit=1000`);
+}
+
+// 赛季冲刺赛清单：一次性获取该赛季所有冲刺站（用于避免逐站请求导致的429/CORS问题）
+async function getSeasonSprintResults(year) {
+    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/sprint.json?limit=1000`);
+}
+
+// 正赛（聚合）：获取某站所有车手的每圈圈速（单次请求，减少API压力）
+async function getRoundLaps(year, round) {
+    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/${round}/laps.json?limit=2000`);
+}
+
+// 正赛（聚合）：获取某站所有车手的进站信息（单次请求，减少API压力）
+async function getRoundPitStops(year, round) {
+    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/${round}/pitstops.json?limit=2000`);
 }
 
 // 标准化车队名称
@@ -124,11 +361,14 @@ function newDriver(d) {
 
 // 获取车手最佳时间
 function getDriverBestTime(driver) {
-    return {
+    debugLog('Driver qualifying data:', driver);
+    const times = {
         Q1: driver.Q1 || null,
         Q2: driver.Q2 || null,
         Q3: driver.Q3 || null
     };
+    debugLog('Driver best times:', times);
+    return times;
 }
 
 // 比较两个车手的排位赛时间
@@ -231,9 +471,23 @@ window.F1Utils = {
     
     // API和数据获取
     fetchData,
+    flushFetchCache,
+    getCacheSummary,
+    flushAllCaches,
+    retryFailedRequests,
+    getFailedRequestsCount,
+    setBaseRateDelay,
     getSeasons,
     getConstructors,
     getQualifying,
+    getConstructorResults,
+    getRaceLaps,
+    getDriverPitStops,
+    getSprintResults,
+    getSeasonSprintResults,
+    getSeasonSchedule,
+    getRoundLaps,
+    getRoundPitStops,
     
     // 车队处理
     normalizeTeamName,
@@ -255,3 +509,11 @@ window.F1Utils = {
     calculateAverage,
     bootstrapConfidenceInterval
 };
+
+// 暴露调试工具
+window.F1Utils.setDebug = function (enabled) {
+    window.__F1_DEBUG = !!enabled;
+    console.log('[Debug] __F1_DEBUG =', window.__F1_DEBUG);
+    return window.__F1_DEBUG;
+};
+window.F1Utils.debug = debugLog;

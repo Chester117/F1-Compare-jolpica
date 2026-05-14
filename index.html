@@ -14,13 +14,17 @@
     <script src="utils.js" defer></script>
     <script src="QualifyingTrendGraph.js" defer></script>
     <script src="history.js" defer></script>
+    <script src="race.js" defer></script>
     <script src="main.js" defer></script>
 </head>
 <body>
     <div class="banner">
         <div class="tab-button active" data-tab="qualifying" onclick="switchTab('qualifying')">排位赛对比</div>
+        <div class="tab-button" data-tab="race" onclick="switchTab('race')">正赛对比</div>
         <div class="tab-button" data-tab="history" onclick="switchTab('history')">队友对战历史</div>
+        <div class="tab-button" data-tab="year" onclick="switchTab('year')">年份对比</div>
     </div>
+    
     
     <div id="qualifying-content">
         <div class="flex-container">
@@ -46,12 +50,63 @@
         </div>
         <div class="flex-container-table" id="historyTable"></div>
     </div>
+    <div id="year-content" style="display:none;">
+        <div class="flex-container">
+            <h1 class="flex-title">F1 年份对比（全队列表）</h1>
+        </div>
+        <div class="flex-container-options">
+            <select class="selector" id="yearOnlyList" name="yearOnlyList"></select>
+            <button class="selector" id="yearGo">Go</button>
+        </div>
+        <div class="flex-container-table" id="yearTable"></div>
+    </div>
+    <div id="race-content" style="display: none;">
+        <div class="flex-container">
+            <h1 class="flex-title">F1正赛对比</h1>
+        </div>
+        <div class="flex-container-options">
+            <select class="selector" id="raceSeasonList" name="raceSeasonList"></select>
+            <select class="selector" id="raceConstructorList" name="raceConstructorList"></select>
+            <select class="selector" id="raceStartRound" name="raceStartRound"></select>
+            <select class="selector" id="raceEndRound" name="raceEndRound"></select>
+            <select class="selector" id="raceThreshold">
+                <option value="none">No Filter</option>
+                <option value="1.03">103%</option>
+                <option value="1.05">105%</option>
+                <option value="1.07" selected>107%</option>
+                <option value="1.10">110%</option>
+            </select>
+            <label class="selector" style="display:flex;align-items:center;gap:6px;">
+                <input type="checkbox" id="raceExcludePit" checked>
+                排除进站圈/出站圈
+            </label>
+            <button class="selector" id="raceGo">Go</button>
+        </div>
+        <div class="flex-container-table" id="raceTables"></div>
+        <div class="flex-container" style="max-width:1200px;margin:10px auto;">
+            <div class="loading-text" id="raceApiExplain" style="font-size:14px;color:#555;">
+                数据来源说明：圈速来自 Ergast API（jolpi.ca 代理）。为降低请求数量并避免429限流，现采用<strong>聚合端点</strong>：
+                <br>/f1/{year}/{round}/laps.json（整站所有车手的每圈圈速，单次请求）
+                <br>/f1/{year}/{round}/pitstops.json（整站所有车手进站明细，仅在勾选“排除进站圈/出站圈”时请求）
+                <br>构建对比时，会过滤掉慢于所选阈值（默认107%）的圈速；选择较小的起止轮次或取消进站过滤可进一步减少请求、提升速度。
+            </div>
+        </div>
+    </div>
     
+    <!-- Partial data notice banner for long history fetches -->
+    <div id="partialNotice" class="partial-notice" style="display:none;">
+        <span id="partialNoticeMsg">部分数据由于网络/CORS/限流未能获取完整。</span>
+        <button id="partialResumeBtn" class="selector">继续获取</button>
+    </div>
     <script>
         // Tab switching logic
         function switchTab(tab) {
             if (tab === 'history') {
                 window.switchTabHistory(tab);
+            } else if (tab === 'race') {
+                window.switchTabRace(tab);
+            } else if (tab === 'year') {
+                window.switchTabYear(tab);
             } else {
                 document.querySelectorAll('.tab-button').forEach(button => {
                     button.classList.remove('active');
@@ -59,9 +114,17 @@
                 
                 document.getElementById('qualifying-content').style.display = tab === 'qualifying' ? 'block' : 'none';
                 document.getElementById('history-content').style.display = tab === 'history' ? 'block' : 'none';
+                document.getElementById('race-content').style.display = tab === 'race' ? 'block' : 'none';
+                document.getElementById('year-content').style.display = tab === 'year' ? 'block' : 'none';
                 document.querySelector(`.tab-button[data-tab="${tab}"]`).classList.add('active');
             }
         }
     </script>
+    
+    <!-- Cache controls moved to the very bottom and centered -->
+    <div class="flex-container" id="cache-controls" style="justify-content:center;padding:16px 0;gap:8px;">
+        <button class="selector" id="clearCacheBtn" title="清除已缓存的数据，强制下次请求重新获取">清空缓存</button>
+        <span id="clearCacheStatus" class="loading-text" style="display:none;">已清空</span>
+    </div>
 </body>
 </html>

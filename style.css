@@ -13,6 +13,23 @@ body {
     font-family: 'Noto Sans SC', 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
 }
 
+/* Partial notice banner */
+.partial-notice {
+    position: fixed;
+    left: 50%;
+    bottom: 20px;
+    transform: translateX(-50%);
+    background: rgba(255, 193, 7, 0.95);
+    color: #3d2e00;
+    padding: 10px 14px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    z-index: 9999;
+}
+
 /* Flex containers */
 .flex-container,
 .flex-container-options,
@@ -37,6 +54,27 @@ body {
 .flex-container-table {
     flex-direction: column;
     align-items: flex-start;
+}
+
+/* Center the race tables specifically in the Race tab */
+#raceTables {
+    align-items: center; /* override default flex-start for race section */
+}
+
+#race-content .comparison-table {
+    margin: 0 auto 1em auto; /* center the table horizontally */
+}
+
+#race-content .comparison-table th,
+#race-content .comparison-table td {
+    text-align: center; /* ensure consistent centered alignment */
+}
+
+/* Center the data source explanation in Race tab */
+#raceApiExplain {
+    text-align: center;
+    margin: 0 auto;
+    width: 100%;
 }
 
 /* Title */
@@ -123,11 +161,71 @@ td {
     border-bottom: none;
 }
 
+.comparison-header-row {
+    width: 100%;
+    max-width: 1200px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
 .comparison-header {
     font-size: 2em;
     margin-bottom: 1em;
     text-align: center;
     width: 100%;
+}
+
+.explain-toggle-btn {
+    display: block;
+    margin: 16px auto 0 auto; /* center horizontally at bottom of section */
+    padding: 10px 16px;
+    border: none;
+    border-radius: 4px;
+    background: #3cb371;
+    color: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1.2;
+    white-space: normal; /* allow wrapping */
+    text-align: center;
+    max-width: 320px; /* keep it tidy on wide screens */
+}
+
+.explain-toggle-btn:hover {
+    background: #2e9b59;
+}
+
+.explain-panel {
+    width: 100%;
+    max-width: 1200px;
+    margin: 8px auto 16px auto;
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 12px 16px;
+    color: #333;
+}
+
+.explain-title {
+    font-weight: 700;
+    margin: 4px 0 6px 0;
+}
+
+.explain-subtitle {
+    font-weight: 600;
+    margin: 10px 0 6px 0;
+}
+
+.explain-list {
+    margin: 0 0 4px 18px;
+    padding: 0;
+}
+
+.explain-ol {
+    margin: 4px 0 8px 18px;
+    padding: 0;
 }
 
 .comparison-table {
@@ -156,6 +254,24 @@ td {
 
 .top-border {
     border-top: 4px solid #ddd;
+}
+
+/* Centered value with right-side note for summary rows */
+.summary-value-content {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr; /* left spacer, centered value, right note */
+    align-items: center;
+    width: 100%;
+}
+.summary-value .val-left {
+    /* empty spacer to balance the right note */
+}
+.summary-value .val-center {
+    justify-self: center;
+}
+.summary-value .val-note {
+    justify-self: end;
+    white-space: nowrap;
 }
 
 .quali-score {
@@ -191,9 +307,17 @@ td {
 
 /* History Table */
 .history-table {
-    width: 100%;
-    max-width: 1000px;
+    width: auto; /* allow table to grow based on content */
+    max-width: 1600px; /* allow a wider table */
+    min-width: 1100px; /* avoid squeezing columns too much */
     margin: 20px auto;
+    border-collapse: collapse;
+}
+
+/* Ensure all cells stay on one line; horizontal scroll will appear if needed */
+.history-table th,
+.history-table td {
+    white-space: nowrap;
 }
 
 .history-table tr:nth-child(even) {
@@ -214,6 +338,12 @@ td {
     display: flex;
     justify-content: center;
     margin-bottom: 2em;
+    width: 100%;
+    overflow-x: auto;
+}
+
+/* Generic wide scroll container for tables like 年份对比 */
+.wide-scroll {
     width: 100%;
     overflow-x: auto;
 }
@@ -315,6 +445,13 @@ td {
 .loading-text {
     font-size: 16px;
     color: #4a4a4a;
+    margin-bottom: 8px;
+}
+
+.loading-subtitle {
+    font-size: 14px;
+    color: #666;
+    margin-top: 5px;
 }
 
 @keyframes spin {
