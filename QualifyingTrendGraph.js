@@ -2,8 +2,59 @@
 // 多个图表实例（排位赛/历史/正赛点云）共用同一个 polling，避免重复定时器。
 // 用法：window.__waitHighchartsReady(onReady [, onTimeout])
 if (typeof window !== 'undefined' && typeof window.__waitHighchartsReady !== 'function') {
+    window.__applyF1HighchartsTheme = function() {
+        if (window.__F1HighchartsThemeApplied || typeof Highcharts === 'undefined') return;
+        window.__F1HighchartsThemeApplied = true;
+        Highcharts.setOptions({
+            colors: ['#ff273a', '#00d294', '#00a5ef', '#f99c00', '#ffffff', '#9f9fa9'],
+            chart: {
+                backgroundColor: '#f8fafc',
+                borderRadius: 8,
+                style: {
+                    fontFamily: 'Noto Sans SC, Source Han Sans SC, Microsoft YaHei, Segoe UI, sans-serif'
+                }
+            },
+            title: {
+                style: {
+                    color: '#15161a',
+                    fontWeight: '800'
+                }
+            },
+            subtitle: {
+                style: {
+                    color: '#6f737d'
+                }
+            },
+            xAxis: {
+                gridLineColor: '#e3e7ee',
+                lineColor: '#cfd5df',
+                tickColor: '#cfd5df',
+                labels: { style: { color: '#4a4e57' } },
+                title: { style: { color: '#4a4e57', fontWeight: '700' } }
+            },
+            yAxis: {
+                gridLineColor: '#e3e7ee',
+                lineColor: '#cfd5df',
+                tickColor: '#cfd5df',
+                labels: { style: { color: '#4a4e57' } },
+                title: { style: { color: '#4a4e57', fontWeight: '700' } }
+            },
+            legend: {
+                itemStyle: { color: '#15161a', fontWeight: '700' },
+                itemHoverStyle: { color: '#ff273a' }
+            },
+            tooltip: {
+                backgroundColor: 'rgba(17, 18, 23, 0.94)',
+                borderColor: '#ff273a',
+                borderRadius: 6,
+                style: { color: '#ffffff' }
+            },
+            credits: { enabled: false }
+        });
+    };
     window.__waitHighchartsReady = function(onReady, onTimeout) {
         if (typeof Highcharts !== 'undefined') {
+            window.__applyF1HighchartsTheme();
             try { onReady(); } catch (e) { console.warn(e); }
             return;
         }
@@ -17,6 +68,7 @@ if (typeof window !== 'undefined' && typeof window.__waitHighchartsReady !== 'fu
             if (typeof Highcharts !== 'undefined') {
                 clearInterval(window.__F1HighchartsPoller);
                 window.__F1HighchartsPoller = null;
+                window.__applyF1HighchartsTheme();
                 const list = window.__F1HighchartsWaiters || [];
                 window.__F1HighchartsWaiters = [];
                 list.forEach(w => { try { w.onReady(); } catch (e) { console.warn(e); } });

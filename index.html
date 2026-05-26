@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>F1 Qualifying Comparison</title>
+    <title>Flying Lap Compare</title>
+    <meta name="theme-color" content="#0b0b0d">
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
     <!-- External Libraries (self-hosted in ./vendor/ to avoid CDN/Cloudflare blocks) -->
@@ -18,51 +19,75 @@
     <script src="main.js" defer></script>
 </head>
 <body>
-    <div class="banner">
-        <div class="tab-button active" data-tab="qualifying" onclick="switchTab('qualifying')">排位赛对比</div>
-        <div class="tab-button" data-tab="race" onclick="switchTab('race')">正赛对比</div>
-        <div class="tab-button" data-tab="history" onclick="switchTab('history')">队友对战历史</div>
-        <div class="tab-button" data-tab="year" onclick="switchTab('year')">年份对比</div>
-    </div>
-    
-    
-    <div id="qualifying-content">
-        <div class="flex-container">
-            <h1 class="flex-title">F1队友排位赛对比计算</h1>
+    <div class="app-frame">
+        <header class="app-hero">
+            <div class="hero-copy">
+                <div class="hero-kicker">F1 TEAMMATE ANALYTICS</div>
+                <h1>Flying Lap Compare</h1>
+                <p>Qualifying / Race / Season Delta</p>
+            </div>
+            <div class="hero-telemetry" aria-hidden="true">
+                <div class="telemetry-ring"></div>
+                <div class="telemetry-card">
+                    <span>DELTA</span>
+                    <strong>0.000</strong>
+                    <em>sec</em>
+                </div>
+                <div class="telemetry-bars">
+                    <i></i><i></i><i></i><i></i><i></i>
+                </div>
+            </div>
+        </header>
+
+        <nav class="banner" aria-label="Comparison modes">
+            <button class="tab-button active" type="button" data-tab="qualifying" onclick="switchTab('qualifying')">排位赛</button>
+            <button class="tab-button" type="button" data-tab="race" onclick="switchTab('race')">正赛</button>
+            <button class="tab-button" type="button" data-tab="history" onclick="switchTab('history')">队友历史</button>
+            <button class="tab-button" type="button" data-tab="year" onclick="switchTab('year')">年份榜单</button>
+        </nav>
+
+        <main class="workspace">
+    <section id="qualifying-content" class="view-panel active-panel">
+        <div class="content-heading">
+            <span class="section-label">MODE 01</span>
+            <h2 class="flex-title">队友排位赛对比</h2>
         </div>
         <div class="flex-container-options">
             <select class="selector" id="seasonList" name="seasonList"></select>
             <select class="selector" id="constructorList" name="constructorList"></select>
-            <button class="selector" id="go">Go</button>
+            <button class="selector primary-action" id="go">分析</button>
         </div>
         <div class="flex-container-table" id="tables"></div>
-    </div>
+    </section>
     
-    <div id="history-content" style="display: none;">
-        <div class="flex-container">
-            <h1 class="flex-title">F1队友历史对比</h1>
+    <section id="history-content" class="view-panel" style="display: none;">
+        <div class="content-heading">
+            <span class="section-label">MODE 03</span>
+            <h2 class="flex-title">队友历史对比</h2>
         </div>
         <div class="flex-container-options">
             <select class="selector" id="startYearList" name="startYearList"></select>
             <select class="selector" id="endYearList" name="endYearList"></select>
             <select class="selector" id="historyConstructorList" name="historyConstructorList"></select>
-            <button class="selector" id="historyGo">Go</button>
+            <button class="selector primary-action" id="historyGo">分析</button>
         </div>
         <div class="flex-container-table" id="historyTable"></div>
-    </div>
-    <div id="year-content" style="display:none;">
-        <div class="flex-container">
-            <h1 class="flex-title">F1 年份对比（全队列表）</h1>
+    </section>
+    <section id="year-content" class="view-panel" style="display:none;">
+        <div class="content-heading">
+            <span class="section-label">MODE 04</span>
+            <h2 class="flex-title">年份对比</h2>
         </div>
         <div class="flex-container-options">
             <select class="selector" id="yearOnlyList" name="yearOnlyList"></select>
-            <button class="selector" id="yearGo">Go</button>
+            <button class="selector primary-action" id="yearGo">分析</button>
         </div>
         <div class="flex-container-table" id="yearTable"></div>
-    </div>
-    <div id="race-content" style="display: none;">
-        <div class="flex-container">
-            <h1 class="flex-title">F1正赛对比</h1>
+    </section>
+    <section id="race-content" class="view-panel" style="display: none;">
+        <div class="content-heading">
+            <span class="section-label">MODE 02</span>
+            <h2 class="flex-title">正赛对比</h2>
         </div>
         <div class="flex-container-options">
             <select class="selector" id="raceSeasonList" name="raceSeasonList"></select>
@@ -78,25 +103,22 @@
                 <option value="1.25">125%</option>
                 <option value="1.30">130%</option>
             </select>
-            <span class="loading-text" style="font-size:12px;color:#666;align-self:center;">
-                正赛建议 115%+；107% 是排位赛规则会过滤掉大多数圈
+            <span class="race-filter-note">
+                正赛建议 115%+
             </span>
             <label class="selector" style="display:flex;align-items:center;gap:6px;">
                 <input type="checkbox" id="raceExcludePit" checked>
                 排除进站圈/出站圈
             </label>
-            <button class="selector" id="raceGo">Go</button>
+            <button class="selector primary-action" id="raceGo">分析</button>
         </div>
         <div class="flex-container-table" id="raceTables"></div>
-        <div class="flex-container" style="max-width:1200px;margin:10px auto;">
-            <div class="loading-text" id="raceApiExplain" style="font-size:14px;color:#555;">
-                数据来源说明：圈速来自 Ergast API（jolpi.ca 代理）。为降低请求数量并避免429限流，现采用<strong>聚合端点</strong>：
-                <br>/f1/{year}/{round}/laps.json（整站所有车手的每圈圈速，单次请求）
-                <br>/f1/{year}/{round}/pitstops.json（整站所有车手进站明细，仅在勾选“排除进站圈/出站圈”时请求）
-                <br>构建对比时，会过滤掉慢于所选阈值（默认107%）的圈速；选择较小的起止轮次或取消进站过滤可进一步减少请求、提升速度。
+        <div class="race-note-shell">
+            <div class="loading-text" id="raceApiExplain">
+                数据源：Jolpica / Ergast。圈速使用单车手分站 laps 端点，进站过滤使用 pitstops 端点；阈值默认 115%。
             </div>
         </div>
-    </div>
+    </section>
     
     <!-- Partial data notice banner for long history fetches -->
     <div id="partialNotice" class="partial-notice" style="display:none;">
@@ -126,6 +148,8 @@
             // 3. 更新按钮高亮
             document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
             document.querySelector(`.tab-button[data-tab="${tab}"]`)?.classList.add('active');
+            document.querySelectorAll('.view-panel').forEach(panel => panel.classList.remove('active-panel'));
+            if (targetId) document.getElementById(targetId)?.classList.add('active-panel');
             // 4. 触发对应 tab 的延迟初始化（首次进入时）
             if (tab === 'history' && typeof window.initHistoryTabFromSwitch === 'function') {
                 window.initHistoryTabFromSwitch();
@@ -142,9 +166,13 @@
     </script>
     
     <!-- Cache controls moved to the very bottom and centered -->
-    <div class="flex-container" id="cache-controls" style="justify-content:center;padding:16px 0;gap:8px;">
-        <button class="selector" id="clearCacheBtn" title="清除已缓存的数据，强制下次请求重新获取">清空缓存</button>
-        <span id="clearCacheStatus" class="loading-text" style="display:none;">已清空</span>
+        </main>
+        <footer class="app-footer">
+            <div class="flex-container" id="cache-controls" style="justify-content:center;padding:16px 0;gap:8px;">
+                <button class="selector" id="clearCacheBtn" title="清除已缓存的数据，强制下次请求重新获取">清空缓存</button>
+                <span id="clearCacheStatus" class="loading-text" style="display:none;">已清空</span>
+            </div>
+        </footer>
     </div>
 </body>
 </html>
