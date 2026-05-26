@@ -486,13 +486,6 @@ function createQualifyingTable(results) {
         tr.className = "race-row";
         currentTable.table.appendChild(tr);
 
-        // 定义阶段颜色
-        const sessionColors = {
-            'Q1': '#ffcdd2',
-            'Q2': '#fff9c4',
-            'Q3': '#e1bee7'
-        };
-
         // 获取比较数据
         const d1Times = F1Utils.getDriverBestTime(driver1.ref);
         const d2Times = F1Utils.getDriverBestTime(driver2.ref);
@@ -534,20 +527,18 @@ function createQualifyingTable(results) {
             }
 
             const time = F1Utils.millisecondsToStruct(timeDifference);
-            const tdColor = time.isNegative ? "#FF7878" : "#85FF78";
-
-            // 为前两个单元格设置背景色
-            tr.cells[0].style.backgroundColor = tdColor;
-            tr.cells[1].style.backgroundColor = tdColor;
+            tr.classList.add(time.isNegative ? "driver-two-faster" : "driver-one-faster");
 
             // 添加时间差、百分比差和赛段单元格
             const timeText = `${time.isNegative ? "-" : "+"}${time.minutes > 0 ? time.minutes+":" : ""}${time.seconds}.${time.milliseconds.toString().padStart(3, '0')}`;
-            addCell(tr, timeText, "center");
-            addCell(tr, `${percentageDifference > 0 ? "+" : ""}${percentageDifference.toFixed(3)}%`, "center");
+            const deltaCell = addCell(tr, timeText, "center");
+            deltaCell.classList.add(time.isNegative ? "negative-delta" : "positive-delta");
+            const percentCell = addCell(tr, `${percentageDifference > 0 ? "+" : ""}${percentageDifference.toFixed(3)}%`, "center");
+            percentCell.classList.add(time.isNegative ? "negative-delta" : "positive-delta");
             
             const sessionCell = addCell(tr, comparison.sessionUsed || "N/A", "center");
             if (comparison.sessionUsed) {
-                sessionCell.style.backgroundColor = sessionColors[comparison.sessionUsed];
+                sessionCell.classList.add("session-badge-cell", `session-${comparison.sessionUsed.toLowerCase()}`);
             }
         }
     }

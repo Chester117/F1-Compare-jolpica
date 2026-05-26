@@ -49,6 +49,7 @@ if (typeof window !== 'undefined' && typeof window.__waitHighchartsReady !== 'fu
                 borderRadius: 6,
                 style: { color: '#ffffff' }
             },
+            accessibility: { enabled: false },
             credits: { enabled: false }
         });
     };

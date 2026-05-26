@@ -941,39 +941,40 @@ table,
     border-collapse: separate;
     border-spacing: 0;
     overflow: hidden;
-    background: var(--paper);
-    color: var(--ink);
-    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(9, 12, 18, 0.94);
+    color: var(--text);
+    border: 1px solid rgba(255,255,255,0.12);
     border-radius: 8px;
-    box-shadow: 0 18px 45px rgba(0,0,0,0.26);
+    box-shadow: 0 18px 55px rgba(0,0,0,0.34);
 }
 
 th {
-    background: #111217;
-    color: #fff;
-    border-bottom: 2px solid var(--red);
+    background: rgba(20, 24, 33, 0.96);
+    color: #eef3fb;
+    border-bottom: 1px solid rgba(255,39,58,0.58);
     font-size: 12px;
     font-weight: 900;
 }
 
 td {
-    border-bottom: 1px solid #dde1e7;
-    border-right: 1px solid #e4e7ec;
-    color: #1b1d22;
-    background: #f7f8fa;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    border-right: 1px solid rgba(255,255,255,0.055);
+    color: #dce5f2;
+    background: rgba(18, 23, 32, 0.9);
 }
 
 tr:nth-child(even) td {
-    background: #eef1f5;
+    background: rgba(22, 28, 39, 0.9);
 }
 
 .summary-row .summary-label,
 .summary-row .summary-value {
-    background: #e8ebf0;
+    background: rgba(15, 20, 29, 0.98);
+    color: #f2f6fb;
 }
 
 .time-difference {
-    background: #1a1b20 !important;
+    background: rgba(255,39,58,0.15) !important;
     color: #fff !important;
 }
 
@@ -1057,6 +1058,123 @@ tr:nth-child(even) td {
 .race-scatter-host {
     padding: 10px;
     background: #f8fafc;
+}
+
+.comparison-table {
+    min-width: 920px;
+}
+
+.comparison-table th {
+    height: 42px;
+    padding: 12px 10px;
+    white-space: nowrap;
+}
+
+.comparison-table td {
+    height: 42px;
+    padding: 10px 12px;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+.comparison-table th:nth-child(2),
+.comparison-table td:nth-child(2) {
+    text-align: left;
+}
+
+.comparison-table .race-row td:nth-child(1),
+.comparison-table .race-row td:nth-child(2) {
+    position: relative;
+    background: rgba(255,255,255,0.055);
+    color: #f2f6fb;
+}
+
+.comparison-table .race-row.driver-one-faster td:nth-child(1),
+.comparison-table .race-row.driver-one-faster td:nth-child(2) {
+    background: linear-gradient(90deg, rgba(0,210,148,0.22), rgba(255,255,255,0.055));
+}
+
+.comparison-table .race-row.driver-two-faster td:nth-child(1),
+.comparison-table .race-row.driver-two-faster td:nth-child(2) {
+    background: linear-gradient(90deg, rgba(255,39,58,0.24), rgba(255,255,255,0.055));
+}
+
+.comparison-table .race-row.driver-one-faster td:first-child::before,
+.comparison-table .race-row.driver-two-faster td:first-child::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+}
+
+.comparison-table .race-row.driver-one-faster td:first-child::before {
+    background: var(--green);
+}
+
+.comparison-table .race-row.driver-two-faster td:first-child::before {
+    background: var(--red);
+}
+
+.comparison-table .negative-delta {
+    color: #ffb7bf;
+}
+
+.comparison-table .positive-delta {
+    color: #8ff3ce;
+}
+
+.comparison-table .session-badge-cell {
+    color: transparent;
+    font-size: 0;
+}
+
+.comparison-table .session-badge-cell::before {
+    content: attr(data-session);
+}
+
+.comparison-table .session-q1::after,
+.comparison-table .session-q2::after,
+.comparison-table .session-q3::after {
+    display: inline-flex;
+    min-width: 34px;
+    justify-content: center;
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 1;
+    font-weight: 900;
+    color: #06100d;
+}
+
+.comparison-table .session-q1::after {
+    content: "Q1";
+    background: #7c8492;
+    color: #fff;
+}
+
+.comparison-table .session-q2::after {
+    content: "Q2";
+    background: var(--amber);
+}
+
+.comparison-table .session-q3::after {
+    content: "Q3";
+    background: var(--green);
+}
+
+.summary-value-content {
+    color: inherit;
+}
+
+.summary-value .val-note {
+    color: var(--muted);
+}
+
+.quali-score {
+    color: #fff;
 }
 
 .app-footer {
