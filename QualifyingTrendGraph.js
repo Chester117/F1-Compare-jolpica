@@ -1,3 +1,37 @@
+// 全局共享：等待 Highcharts CDN 加载完成的守卫。
+// 多个图表实例（排位赛/历史/正赛点云）共用同一个 polling，避免重复定时器。
+// 用法：window.__waitHighchartsReady(onReady [, onTimeout])
+if (typeof window !== 'undefined' && typeof window.__waitHighchartsReady !== 'function') {
+    window.__waitHighchartsReady = function(onReady, onTimeout) {
+        if (typeof Highcharts !== 'undefined') {
+            try { onReady(); } catch (e) { console.warn(e); }
+            return;
+        }
+        const waiters = (window.__F1HighchartsWaiters = window.__F1HighchartsWaiters || []);
+        waiters.push({ onReady, onTimeout });
+        if (window.__F1HighchartsPoller) return;
+        let tries = 0;
+        const maxTries = 200; // ~20s
+        window.__F1HighchartsPoller = setInterval(() => {
+            tries++;
+            if (typeof Highcharts !== 'undefined') {
+                clearInterval(window.__F1HighchartsPoller);
+                window.__F1HighchartsPoller = null;
+                const list = window.__F1HighchartsWaiters || [];
+                window.__F1HighchartsWaiters = [];
+                list.forEach(w => { try { w.onReady(); } catch (e) { console.warn(e); } });
+            } else if (tries >= maxTries) {
+                clearInterval(window.__F1HighchartsPoller);
+                window.__F1HighchartsPoller = null;
+                console.error('[F1] Highcharts failed to load after 20s');
+                const list = window.__F1HighchartsWaiters || [];
+                window.__F1HighchartsWaiters = [];
+                list.forEach(w => { if (typeof w.onTimeout === 'function') { try { w.onTimeout(); } catch (e) { console.warn(e); } } });
+            }
+        }, 100);
+    };
+}
+
 function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
     // Base state
     const state = {
@@ -307,30 +341,46 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
         container.appendChild(controlRow);
     }
 
+    // 委托给顶层共享的 Highcharts 就绪守卫；显示本实例的加载占位
+    function whenHighchartsReady(cb) {
+        const mainEl = container.querySelector('.main-chart');
+        if (typeof Highcharts === 'undefined' && mainEl && !mainEl.dataset.waitingHighcharts) {
+            mainEl.dataset.waitingHighcharts = '1';
+            mainEl.innerHTML = '<div class="loading-text" style="text-align:center;padding:30px;">图表库加载中…</div>';
+        }
+        window.__waitHighchartsReady(cb, () => {
+            if (mainEl) {
+                mainEl.innerHTML = '<div class="loading-text" style="text-align:center;padding:30px;color:#b85e00;">图表库（Highcharts CDN）加载失败，请检查网络后刷新页面。</div>';
+            }
+        });
+    }
+
     // Update charts with current data
     function updateCharts() {
-        const chartData = prepareChartData();
-        renderTrendStats(chartData.trends);
-        
-        // Update main chart
-        if (state.mainChart) {
-            state.mainChart.destroy();
-        }
-        state.mainChart = Highcharts.chart(
-            container.querySelector('.main-chart'), 
-            getChartConfig(chartData.data, chartData.trends, chartData.yMin, chartData.yMax)
-        );
-        
-        // Update trend chart if it exists
-        if (state.trendOnlyGraph) {
-            if (state.trendChart) {
-                state.trendChart.destroy();
+        whenHighchartsReady(() => {
+            const chartData = prepareChartData();
+            renderTrendStats(chartData.trends);
+
+            // Update main chart
+            if (state.mainChart) {
+                state.mainChart.destroy();
             }
-            state.trendChart = Highcharts.chart(
-                state.trendOnlyGraph, 
-                getChartConfig(chartData.data, chartData.trends, chartData.yMin, chartData.yMax, true)
+            state.mainChart = Highcharts.chart(
+                container.querySelector('.main-chart'),
+                getChartConfig(chartData.data, chartData.trends, chartData.yMin, chartData.yMax)
             );
-        }
+
+            // Update trend chart if it exists
+            if (state.trendOnlyGraph) {
+                if (state.trendChart) {
+                    state.trendChart.destroy();
+                }
+                state.trendChart = Highcharts.chart(
+                    state.trendOnlyGraph,
+                    getChartConfig(chartData.data, chartData.trends, chartData.yMin, chartData.yMax, true)
+                );
+            }
+        });
     }
 
     // Event Handlers

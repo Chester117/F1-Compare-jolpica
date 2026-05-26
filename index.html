@@ -6,10 +6,10 @@
     <title>F1 Qualifying Comparison</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
-    <!-- External Libraries -->
-    <script src="https://code.highcharts.com/highcharts.js" defer></script>
-    <script src="https://code.highcharts.com/modules/exporting.js" defer></script>
-    <script src="https://code.highcharts.com/modules/offline-exporting.js" defer></script>
+    <!-- External Libraries (self-hosted in ./vendor/ to avoid CDN/Cloudflare blocks) -->
+    <script src="vendor/highcharts.js" defer></script>
+    <script src="vendor/exporting.js" defer></script>
+    <script src="vendor/offline-exporting.js" defer></script>
     <!-- Application Scripts -->
     <script src="utils.js" defer></script>
     <script src="QualifyingTrendGraph.js" defer></script>
@@ -69,13 +69,18 @@
             <select class="selector" id="raceConstructorList" name="raceConstructorList"></select>
             <select class="selector" id="raceStartRound" name="raceStartRound"></select>
             <select class="selector" id="raceEndRound" name="raceEndRound"></select>
-            <select class="selector" id="raceThreshold">
+            <select class="selector" id="raceThreshold" title="过滤掉慢于该百分比的圈速；正赛推荐 115%+（107% 是排位赛规则，会过滤掉绝大部分正赛圈）">
                 <option value="none">No Filter</option>
-                <option value="1.03">103%</option>
-                <option value="1.05">105%</option>
-                <option value="1.07" selected>107%</option>
+                <option value="1.07">107%</option>
                 <option value="1.10">110%</option>
+                <option value="1.15" selected>115%</option>
+                <option value="1.20">120%</option>
+                <option value="1.25">125%</option>
+                <option value="1.30">130%</option>
             </select>
+            <span class="loading-text" style="font-size:12px;color:#666;align-self:center;">
+                正赛建议 115%+；107% 是排位赛规则会过滤掉大多数圈
+            </span>
             <label class="selector" style="display:flex;align-items:center;gap:6px;">
                 <input type="checkbox" id="raceExcludePit" checked>
                 排除进站圈/出站圈
@@ -99,26 +104,41 @@
         <button id="partialResumeBtn" class="selector">继续获取</button>
     </div>
     <script>
-        // Tab switching logic
+        // 所有 tab 切换走同一个函数，统一隐藏全部面板再显示目标，避免上一个面板残留
+        const TAB_PANELS = {
+            qualifying: 'qualifying-content',
+            race:       'race-content',
+            history:    'history-content',
+            year:       'year-content'
+        };
         function switchTab(tab) {
-            if (tab === 'history') {
-                window.switchTabHistory(tab);
-            } else if (tab === 'race') {
-                window.switchTabRace(tab);
-            } else if (tab === 'year') {
-                window.switchTabYear(tab);
-            } else {
-                document.querySelectorAll('.tab-button').forEach(button => {
-                    button.classList.remove('active');
-                });
-                
-                document.getElementById('qualifying-content').style.display = tab === 'qualifying' ? 'block' : 'none';
-                document.getElementById('history-content').style.display = tab === 'history' ? 'block' : 'none';
-                document.getElementById('race-content').style.display = tab === 'race' ? 'block' : 'none';
-                document.getElementById('year-content').style.display = tab === 'year' ? 'block' : 'none';
-                document.querySelector(`.tab-button[data-tab="${tab}"]`).classList.add('active');
+            // 1. 隐藏所有面板
+            Object.values(TAB_PANELS).forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+            // 2. 显示目标面板
+            const targetId = TAB_PANELS[tab];
+            if (targetId) {
+                const targetEl = document.getElementById(targetId);
+                if (targetEl) targetEl.style.display = 'block';
+            }
+            // 3. 更新按钮高亮
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+            document.querySelector(`.tab-button[data-tab="${tab}"]`)?.classList.add('active');
+            // 4. 触发对应 tab 的延迟初始化（首次进入时）
+            if (tab === 'history' && typeof window.initHistoryTabFromSwitch === 'function') {
+                window.initHistoryTabFromSwitch();
+            } else if (tab === 'race' && typeof window.initRaceTabFromSwitch === 'function') {
+                window.initRaceTabFromSwitch();
+            } else if (tab === 'year' && typeof window.initYearTabFromSwitch === 'function') {
+                window.initYearTabFromSwitch();
             }
         }
+        // 兼容旧调用：之前历史/赛/年份代码里挂在 window 上的 switchTab* 也走同一份逻辑
+        window.switchTabHistory = switchTab;
+        window.switchTabRace    = switchTab;
+        window.switchTabYear    = switchTab;
     </script>
     
     <!-- Cache controls moved to the very bottom and centered -->

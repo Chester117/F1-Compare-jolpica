@@ -511,3 +511,22 @@ td {
         max-width: 300px;
     }
 }
+
+/* 正赛圈速点云图 — 折叠/展开容器 */
+.race-scatter-row td {
+    background: #fafafa;
+    border-top: 1px dashed #ddd;
+}
+.race-scatter-toggle {
+    font-size: 12px;
+    padding: 4px 12px;
+    margin: 2px 0;
+}
+.race-scatter-host {
+    margin-top: 8px;
+    min-height: 360px;
+    background: #fff;
+    border: 1px solid #e5e5e5;
+    border-radius: 4px;
+    padding: 6px;
+}

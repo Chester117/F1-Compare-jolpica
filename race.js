@@ -8,6 +8,209 @@
   // Round-level aggregate cache to minimize API calls
   const roundAggCache = new Map(); // key: `${year}-${round}` -> { lapsByDriver: Map, pitsByDriver: Map, outLapsByDriver: Map, pitLoaded: boolean }
 
+  // 点云图：本次渲染创建的 Highcharts 实例，重渲染前统一销毁，避免泄漏
+  const raceChartInstances = [];
+  function destroyAllRaceCharts() {
+    while (raceChartInstances.length) {
+      const c = raceChartInstances.pop();
+      try { c && c.destroy && c.destroy(); } catch (_) {}
+    }
+  }
+
+  // 简单最小二乘线性拟合，返回 { slope, intercept } 用于点云上的趋势线
+  function linearFit(xs, ys) {
+    const n = xs.length;
+    if (n < 2) return null;
+    let sx = 0, sy = 0;
+    for (let i = 0; i < n; i++) { sx += xs[i]; sy += ys[i]; }
+    const mx = sx / n, my = sy / n;
+    let num = 0, den = 0;
+    for (let i = 0; i < n; i++) {
+      const dx = xs[i] - mx;
+      num += dx * (ys[i] - my);
+      den += dx * dx;
+    }
+    if (den === 0) return { slope: 0, intercept: my };
+    const slope = num / den;
+    return { slope, intercept: my - slope * mx };
+  }
+
+  function msToLabel(ms) {
+    const abs = Math.abs(ms);
+    const m = Math.floor(abs / 60000);
+    const s = Math.floor((abs % 60000) / 1000);
+    const mm = m > 0 ? `${m}:` : '';
+    const ss = m > 0 ? String(s).padStart(2, '0') : String(s);
+    const msPart = String(abs % 1000).padStart(3, '0');
+    return `${mm}${ss}.${msPart}`;
+  }
+
+  // 渲染单场圈速点云图
+  // host: 容器 div
+  // ctx: { year, round, raceName, d1Name, d2Name, d1Data, d2Data, usedSet, excludePit, threshold }
+  function renderRaceScatter(host, ctx) {
+    if (host.dataset.rendered === '1') return; // 懒渲染：只在首次展开时创建
+    if (typeof window.__waitHighchartsReady !== 'function') {
+      host.innerHTML = '<div class="loading-text" style="padding:20px;text-align:center;">图表库未就绪</div>';
+      return;
+    }
+    host.innerHTML = '<div class="loading-text" style="padding:20px;text-align:center;">图表加载中…</div>';
+
+    window.__waitHighchartsReady(() => {
+      const { d1Data, d2Data, usedSet, excludePit, threshold, d1Name, d2Name } = ctx;
+      // D1/D2 颜色（与 QualifyingTrendGraph 风格一致）
+      const COLOR_D1 = '#1e90ff';
+      const COLOR_D2 = '#ff6b6b';
+
+      // 构建散点数据
+      const d1Used = [], d1Excluded = [];
+      const d2Used = [], d2Excluded = [];
+
+      const lapTimeToPoint = (lap, ms, isUsed, reasonExcl) => {
+        const point = { x: lap, y: ms, custom: { reason: reasonExcl } };
+        return point;
+      };
+
+      const allLaps = new Set([...d1Data.lapsMap.keys(), ...d2Data.lapsMap.keys()]);
+      // 取每个 driver 的最快圈，用于在 tooltip 解释阈值
+      let best1 = Infinity, best2 = Infinity;
+      for (const n of allLaps) {
+        const t1 = d1Data.lapsMap.get(n);
+        const t2 = d2Data.lapsMap.get(n);
+        if (Number.isFinite(t1) && t1 < best1) best1 = t1;
+        if (Number.isFinite(t2) && t2 < best2) best2 = t2;
+      }
+      const threshFactor = (typeof threshold === 'string' && threshold !== 'none') ? parseFloat(threshold) : null;
+
+      for (const lap of [...allLaps].sort((a, b) => a - b)) {
+        const t1 = d1Data.lapsMap.get(lap);
+        const t2 = d2Data.lapsMap.get(lap);
+        if (Number.isFinite(t1)) {
+          const pitExcl = excludePit && (d1Data.pits.has(lap) || d1Data.outLaps.has(lap));
+          const overThresh = threshFactor && Number.isFinite(best1) && t1 > best1 * threshFactor;
+          if (usedSet.has(lap) && !pitExcl && !overThresh) {
+            d1Used.push({ x: lap, y: t1 });
+          } else {
+            const reason = pitExcl ? '进站/出站圈' : (overThresh ? `超过 ${(threshFactor*100).toFixed(0)}% 阈值` : '另一位车手缺失该圈');
+            d1Excluded.push({ x: lap, y: t1, custom: { reason } });
+          }
+        }
+        if (Number.isFinite(t2)) {
+          const pitExcl = excludePit && (d2Data.pits.has(lap) || d2Data.outLaps.has(lap));
+          const overThresh = threshFactor && Number.isFinite(best2) && t2 > best2 * threshFactor;
+          if (usedSet.has(lap) && !pitExcl && !overThresh) {
+            d2Used.push({ x: lap, y: t2 });
+          } else {
+            const reason = pitExcl ? '进站/出站圈' : (overThresh ? `超过 ${(threshFactor*100).toFixed(0)}% 阈值` : '另一位车手缺失该圈');
+            d2Excluded.push({ x: lap, y: t2, custom: { reason } });
+          }
+        }
+      }
+
+      // 线性拟合（仅入选圈）
+      const fit1 = linearFit(d1Used.map(p => p.x), d1Used.map(p => p.y));
+      const fit2 = linearFit(d2Used.map(p => p.x), d2Used.map(p => p.y));
+      const minLap = Math.min(...allLaps);
+      const maxLap = Math.max(...allLaps);
+      const trendLine = (fit) => fit ? [[minLap, fit.intercept + fit.slope * minLap], [maxLap, fit.intercept + fit.slope * maxLap]] : [];
+
+      const series = [
+        {
+          name: `${d1Name}`,
+          type: 'scatter',
+          data: d1Used,
+          color: COLOR_D1,
+          marker: { radius: 4, symbol: 'circle' }
+        },
+        {
+          name: `${d2Name}`,
+          type: 'scatter',
+          data: d2Used,
+          color: COLOR_D2,
+          marker: { radius: 4, symbol: 'circle' }
+        },
+        {
+          name: `${d1Name} (排除)`,
+          type: 'scatter',
+          data: d1Excluded,
+          color: COLOR_D1,
+          marker: { radius: 3, symbol: 'circle', fillOpacity: 0.25, lineWidth: 0 },
+          opacity: 0.4,
+          visible: true
+        },
+        {
+          name: `${d2Name} (排除)`,
+          type: 'scatter',
+          data: d2Excluded,
+          color: COLOR_D2,
+          marker: { radius: 3, symbol: 'circle', fillOpacity: 0.25, lineWidth: 0 },
+          opacity: 0.4,
+          visible: true
+        }
+      ];
+
+      if (fit1) {
+        const dSlope1 = (fit1.slope / 1000).toFixed(4); // 秒/圈
+        series.push({
+          name: `${d1Name} 趋势 (${dSlope1 >= 0 ? '+' : ''}${dSlope1} s/圈)`,
+          type: 'line',
+          data: trendLine(fit1),
+          color: COLOR_D1,
+          dashStyle: 'Solid',
+          lineWidth: 2,
+          marker: { enabled: false },
+          enableMouseTracking: false
+        });
+      }
+      if (fit2) {
+        const dSlope2 = (fit2.slope / 1000).toFixed(4);
+        series.push({
+          name: `${d2Name} 趋势 (${dSlope2 >= 0 ? '+' : ''}${dSlope2} s/圈)`,
+          type: 'line',
+          data: trendLine(fit2),
+          color: COLOR_D2,
+          dashStyle: 'Solid',
+          lineWidth: 2,
+          marker: { enabled: false },
+          enableMouseTracking: false
+        });
+      }
+
+      host.innerHTML = '';
+      const chart = Highcharts.chart(host, {
+        chart: { type: 'scatter', height: 360 },
+        title: { text: `${ctx.raceName} — 圈速点云`, style: { fontSize: '14px' } },
+        xAxis: {
+          title: { text: '圈数' },
+          allowDecimals: false
+        },
+        yAxis: {
+          title: { text: '圈速' },
+          labels: { formatter: function() { return msToLabel(this.value); } }
+        },
+        tooltip: {
+          formatter: function() {
+            const t = msToLabel(this.y);
+            const reason = this.point?.custom?.reason;
+            const tail = reason ? `<br/><span style="color:#999;">${reason}</span>` : '';
+            return `<b>${this.series.name}</b><br/>Lap ${this.x}: ${t}${tail}`;
+          }
+        },
+        legend: { itemStyle: { fontSize: '12px' } },
+        credits: { enabled: false },
+        plotOptions: {
+          scatter: { marker: { states: { hover: { lineWidth: 1 } } } },
+          line: { lineWidth: 2 }
+        },
+        series
+      });
+      raceChartInstances.push(chart);
+      host.dataset.rendered = '1';
+    }, () => {
+      host.innerHTML = '<div class="loading-text" style="padding:20px;text-align:center;color:#b85e00;">图表库加载失败</div>';
+    });
+  }
+
   // 暴露比赛页缓存的汇总与清空函数，便于统一清理
   window.getRaceCacheSummary = function() {
     const summary = { lapCacheEntries: lapCache.size, roundAggEntries: roundAggCache.size };
@@ -124,7 +327,11 @@
     try {
       const schedule = await F1Utils.getSeasonSchedule(year);
       const races = schedule?.MRData?.RaceTable?.Races || [];
-      const maxRound = races.length > 0 ? Math.max(...races.map(r => parseInt(r.round, 10))) : 0;
+      // 用 reduce 替代扩展运算符，避免大赛季时栈溢出
+      const maxRound = races.reduce((m, r) => {
+        const v = parseInt(r.round, 10);
+        return Number.isFinite(v) && v > m ? v : m;
+      }, 0);
       const optionsHtml = Array.from({ length: maxRound }, (_, i) => `<option value="${i+1}">${i+1}</option>`).join('');
       startRoundSel.innerHTML = optionsHtml;
       endRoundSel.innerHTML = optionsHtml;
@@ -200,49 +407,53 @@
   }
 
   async function getDriverRaceData(year, round, driverId, excludePit) {
-    // Exclude the filter flag from cache key to maximize reuse; filtering happens later
+    // Cache key 不含 excludePit，缓存按需复用；pit 过滤只影响后续业务逻辑
     const key = `${year}-${round}-${driverId}`;
     if (lapCache.has(key)) return lapCache.get(key);
 
-    // Use aggregated round endpoints to minimize requests
-    const agg = await ensureRoundLaps(year, round);
-    let dMap = agg.lapsByDriver.get(driverId) || new Map();
-
-    // Fallback: if aggregated endpoint returned nothing for this driver, try per-driver laps endpoint once
-    if (dMap.size === 0) {
-      try {
-        const perResp = await F1Utils.getRaceLaps(year, round, driverId);
-        const prRaces = perResp?.MRData?.RaceTable?.Races || [];
-        if (prRaces.length > 0 && Array.isArray(prRaces[0].Laps)) {
-          const temp = new Map();
-          for (const lap of prRaces[0].Laps) {
-            const ln = parseInt(lap.number || lap.LapNumber || lap.lap, 10);
-            const timings = lap.Timings || lap.timing || lap.timings || [];
-            const t0 = timings[0];
-            const timeStr = t0?.time || t0?.Time || t0?.laptime || t0?.lapTime;
-            if (Number.isFinite(ln) && timeStr) temp.set(ln, F1Utils.convertTimeString(timeStr));
-          }
-          if (temp.size > 0) {
-            dMap = temp;
-            F1Utils.debug?.('[Race] Per-driver laps fallback used', { year, round, driverId, laps: temp.size });
+    // 主路径：per-driver /drivers/{id}/laps.json
+    // 原因：jolpica 的聚合端点 /laps.json 把每页 timing 数硬性限制在 100
+    // 一站 56 圈 × 20 车手 = ~1030 条，单页只能拿到前 5 圈，全部车手数据被截断。
+    // per-driver 一页能装下整场比赛的圈数（最长 Monaco 78 圈 < 100），所以一次请求就够。
+    const dMap = new Map();
+    try {
+      const perResp = await F1Utils.getRaceLaps(year, round, driverId);
+      const laps = perResp?.MRData?.RaceTable?.Races?.[0]?.Laps;
+      if (Array.isArray(laps)) {
+        for (const lap of laps) {
+          const ln = parseInt(lap.number || lap.LapNumber || lap.lap, 10);
+          const t0 = (lap.Timings || lap.timing || lap.timings || [])[0];
+          const ts = t0?.time || t0?.Time || t0?.laptime || t0?.lapTime;
+          if (Number.isFinite(ln) && ts) {
+            const ms = F1Utils.convertTimeString(ts);
+            if (Number.isFinite(ms)) dMap.set(ln, ms);
           }
         }
-      } catch (e) {
-        // swallow and continue; higher level will handle error if needed
-        F1Utils.debug?.('[Race] Per-driver laps fallback failed', { year, round, driverId, error: String(e) });
       }
+      F1Utils.debug?.('[Race] per-driver laps loaded', { year, round, driverId, laps: dMap.size });
+    } catch (e) {
+      F1Utils.debug?.('[Race] per-driver laps failed', { year, round, driverId, error: String(e) });
+      throw e; // 让上层显示"请求失败"行
     }
 
+    // pit/out 圈：同样走 per-driver 端点
     let pits = new Set();
     let outLaps = new Set();
     if (excludePit) {
       try {
-        const aggPit = await ensureRoundPits(year, round);
-        pits = aggPit.pitsByDriver.get(driverId) || new Set();
-        outLaps = aggPit.outLapsByDriver.get(driverId) || new Set();
+        const presp = await F1Utils.getDriverPitStops(year, round, driverId);
+        const stops = presp?.MRData?.RaceTable?.Races?.[0]?.PitStops || [];
+        for (const stop of stops) {
+          const ln = parseInt(stop.lap || stop.Lap || stop.lapNumber, 10);
+          if (Number.isFinite(ln)) {
+            pits.add(ln);
+            outLaps.add(ln + 1);
+          }
+        }
+        F1Utils.debug?.('[Race] per-driver pitstops loaded', { year, round, driverId, stops: pits.size });
       } catch (e) {
-        // Graceful degradation on pit-stop fetch failure (e.g., 429): proceed without excluding pits
-        F1Utils.debug?.('[Race] Pit stops fetch failed; proceeding without pit filtering', { year, round, driverId, error: String(e) });
+        // pit 数据失败不阻断主流程
+        F1Utils.debug?.('[Race] per-driver pitstops failed; proceeding without pit filter', { year, round, driverId, error: String(e) });
         pits = new Set();
         outLaps = new Set();
       }
@@ -298,7 +509,12 @@
     const raceTables = document.getElementById('raceTables');
     const year = document.getElementById('raceSeasonList').value;
     const constructorSelect = document.getElementById('raceConstructorList');
-    const constructorId = constructorSelect.options[constructorSelect.selectedIndex].id;
+    const selectedConstructorOpt = constructorSelect?.options?.[constructorSelect.selectedIndex];
+    if (!selectedConstructorOpt) {
+      raceTables.innerHTML = '<div class="loading-text">请先选择车队</div>';
+      return;
+    }
+    const constructorId = selectedConstructorOpt.id;
     const thresholdSel = document.getElementById('raceThreshold').value;
     const excludePit = document.getElementById('raceExcludePit').checked;
     const startRoundSel = document.getElementById('raceStartRound');
@@ -372,13 +588,14 @@
       console.log('[Race Compare] Teammate groups in selection', summary);
     } catch(e) { /* noop */ }
 
-    // Build one table per group
+    // Build one table per group（先销毁上一轮的 Highcharts 实例避免泄漏）
+    destroyAllRaceCharts();
     raceTables.innerHTML = '';
-    const groupsInOrder = Array.from(pairGroups.values()).sort((a,b)=>{
-      const amin = Math.min(...a.races.map(x=>parseInt(x.round,10)));
-      const bmin = Math.min(...b.races.map(x=>parseInt(x.round,10)));
-      return amin - bmin;
-    });
+    const minRound = (races) => races.reduce((m, x) => {
+      const v = parseInt(x.round, 10);
+      return Number.isFinite(v) && v < m ? v : m;
+    }, Infinity);
+    const groupsInOrder = Array.from(pairGroups.values()).sort((a,b) => minRound(a.races) - minRound(b.races));
 
     for (const grp of groupsInOrder) {
       const table = document.createElement('table');
@@ -564,6 +781,42 @@
         tdCount.style.textAlign = 'center';
         tdCount.textContent = String(perLapDeltas.length);
         tr.appendChild(tdCount);
+
+        // 在该比赛行下方插入一行用于折叠展开圈速点云图
+        const chartTr = document.createElement('tr');
+        chartTr.className = 'race-scatter-row';
+        table.appendChild(chartTr);
+        const chartTd = document.createElement('td');
+        chartTd.colSpan = 7;
+        chartTd.style.padding = '4px 8px';
+        chartTr.appendChild(chartTd);
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'race-scatter-toggle selector';
+        toggleBtn.type = 'button';
+        toggleBtn.textContent = '显示圈速点云图';
+        chartTd.appendChild(toggleBtn);
+
+        const chartHost = document.createElement('div');
+        chartHost.className = 'race-scatter-host';
+        chartHost.style.display = 'none';
+        chartTd.appendChild(chartHost);
+
+        const usedSet = new Set(usedLapNums);
+        const scatterCtx = {
+          year, round, raceName: r.raceName,
+          d1Name: `${d1.givenName} ${d1.familyName}`,
+          d2Name: `${d2.givenName} ${d2.familyName}`,
+          d1Data, d2Data,
+          usedSet, excludePit, threshold: thresholdSel
+        };
+
+        toggleBtn.addEventListener('click', () => {
+          const opening = chartHost.style.display === 'none';
+          chartHost.style.display = opening ? 'block' : 'none';
+          toggleBtn.textContent = opening ? '隐藏圈速点云图' : '显示圈速点云图';
+          if (opening) renderRaceScatter(chartHost, scatterCtx);
+        });
       }
     }
   }
@@ -602,16 +855,8 @@
     raceTabInitialized = true;
   }
 
-  window.switchTabRace = function(tab) {
-    // Update active tab styles
-    document.querySelectorAll('.tab-button').forEach(b=>b.classList.remove('active'));
-    document.querySelector(`.tab-button[data-tab="${tab}"]`)?.classList.add('active');
-    // Show/hide sections
-    document.getElementById('qualifying-content').style.display = tab === 'qualifying' ? 'block' : 'none';
-    document.getElementById('history-content').style.display = tab === 'history' ? 'block' : 'none';
-    document.getElementById('race-content').style.display = tab === 'race' ? 'block' : 'none';
-    if (tab === 'race') initRaceTab();
-  };
+  // 暴露初始化函数给 index.html 中统一的 switchTab 调用
+  window.initRaceTabFromSwitch = initRaceTab;
 
   // Initialize when page loads if race tab is active
   window.addEventListener('load', () => {

@@ -14,10 +14,13 @@ async function updateTeamSelector(year) {
     const normalizedCurrentSelection = F1Utils.normalizeTeamName(currentSelection);
     
     // 创建下拉选项
-    historyConstructor.innerHTML = list.MRData.ConstructorTable.Constructors.map(team => {
+    const constructors = list?.MRData?.ConstructorTable?.Constructors;
+    if (!Array.isArray(constructors)) return;
+    const esc = F1Utils.escapeHtml;
+    historyConstructor.innerHTML = constructors.map(team => {
         const normalizedName = F1Utils.normalizeTeamName(team.name);
         const displayName = `${team.name}${normalizedName !== team.name ? ` (${normalizedName})` : ''}`;
-        return `<option value="${team.name}" id="${team.constructorId}" data-normalized="${normalizedName}">${displayName}</option>`;
+        return `<option value="${esc(team.name)}" id="${esc(team.constructorId)}" data-normalized="${esc(normalizedName)}">${esc(displayName)}</option>`;
     }).join('');
     
     // 尝试选择之前选中的车队（按标准化名称）
@@ -98,23 +101,32 @@ async function fillYearSelectors() {
 async function getTeamContinuity(startYear, endYear) {
     const teamPresence = {};
     const teamYears = {};
-    
-    for (let year = startYear; year <= endYear; year++) {
-        const data = await F1Utils.getConstructors(year);
-        if (!data || !data.MRData.ConstructorTable.Constructors) continue;
-        
-        data.MRData.ConstructorTable.Constructors.forEach(team => {
+
+    const years = [];
+    for (let year = startYear; year <= endYear; year++) years.push(year);
+
+    // 并行拉取所有年份的 constructors，速度从串行 N 秒降到 1 个 round-trip
+    const settled = await Promise.allSettled(years.map(y => F1Utils.getConstructors(y)));
+
+    settled.forEach((res, idx) => {
+        const year = years[idx];
+        if (res.status !== 'fulfilled') return;
+        const data = res.value;
+        const constructors = data?.MRData?.ConstructorTable?.Constructors;
+        if (!Array.isArray(constructors)) return;
+
+        constructors.forEach(team => {
             const normalizedName = F1Utils.normalizeTeamName(team.name);
-            
+
             if (!teamPresence[normalizedName]) {
                 teamPresence[normalizedName] = {};
                 teamYears[normalizedName] = [];
             }
-            
+
             teamPresence[normalizedName][year] = team.constructorId;
             teamYears[normalizedName].push(year);
         });
-    }
+    });
     
     // 检查连续性
     const discontinuousTeams = {};
@@ -149,11 +161,10 @@ async function getTeamContinuity(startYear, endYear) {
 // 获取指定年份和ID的实际车队名称
 async function getActualTeamName(year, constructorId) {
     const data = await F1Utils.getConstructors(year);
-    if (data && data.MRData.ConstructorTable.Constructors) {
-        const team = data.MRData.ConstructorTable.Constructors.find(t => t.constructorId === constructorId);
-        if (team) {
-            return team.name;
-        }
+    const constructors = data?.MRData?.ConstructorTable?.Constructors;
+    if (Array.isArray(constructors)) {
+        const team = constructors.find(t => t.constructorId === constructorId);
+        if (team) return team.name;
     }
     return constructorId;
 }
@@ -572,7 +583,7 @@ async function processDriverPairData(year, actualConstructorId, normalizedName, 
                 }
             }
             sprintPreloadOk = true;
-            sprintRoundsLoaded = rounds.sort((a,b)=>parseInt(a)-parseInt(b));
+            sprintRoundsLoaded = rounds.sort((a,b)=>parseInt(a,10)-parseInt(b,10));
             console.log('[History Sprint Preload]', { year, sprintRounds: sprintRoundsLoaded });
         } catch (se) {
             console.warn('[History Sprint Preload] Failed to fetch season sprint list, will skip sprint points to avoid per-round requests', { year, error: String(se) });
@@ -649,7 +660,10 @@ async function processDriverPairData(year, actualConstructorId, normalizedName, 
                             sprintInfo.fallback = true;
                         }
                     } catch (fe) {
-                        // keep default sprintInfo.reason; no extra logging to avoid noise
+                        // 不阻断主流程；通过 debugLog 记录，便于排查 429/网络问题
+                        sprintInfo.reason = `Per-round sprint fallback failed: ${fe?.code || fe?.message || String(fe)}`;
+                        sprintInfo.fallbackError = String(fe);
+                        F1Utils.debug?.('[History] Per-round sprint fallback failed', { year, round: rd, error: String(fe) });
                     }
                 }
             }
@@ -844,8 +858,8 @@ async function processDriverPairData(year, actualConstructorId, normalizedName, 
 
 // 显示历史结果函数
 async function showHistoryResults() {
-    const startYear = parseInt(document.getElementById('startYearList').value);
-    const endYear = parseInt(document.getElementById('endYearList').value);
+    const startYear = parseInt(document.getElementById('startYearList').value, 10);
+    const endYear = parseInt(document.getElementById('endYearList').value, 10);
     const constructorSelect = document.getElementById('historyConstructorList');
     
     if (!constructorSelect) {
@@ -1062,10 +1076,20 @@ async function showHistoryResults() {
         } catch(_) {}
     };
 
+    // 并行预热每年的 driverStandings（受请求队列限流保护）
+    // 不阻塞失败：单年缺失会在 processDriverPairData 内被再次按需获取
+    const standingsPrefetchYears = Object.keys(mappedConstructorIds).map(y => parseInt(y, 10));
+    Promise.allSettled(standingsPrefetchYears.map(y => preloadStandingsForYear(y))).catch(()=>{});
+
     // 开始处理
-    await processFromYear(startYear);
-    // 取消事件订阅，避免泄漏
-    try { if (typeof unsubscribeError === 'function') unsubscribeError(); } catch(_) {}
+    try {
+        await processFromYear(startYear);
+    } finally {
+        // 无论是正常完成、抛错还是中途“等待用户继续”而提前返回，
+        // 都必须取消事件订阅，避免 F1RequestEvents 的 listener 累积。
+        try { if (typeof unsubscribeError === 'function') unsubscribeError(); } catch(_) {}
+        unsubscribeError = null;
+    }
     const tableRows = allPairsResults
         .filter(result => result !== null)
         .map(data => {
@@ -1090,8 +1114,8 @@ async function showHistoryResults() {
                                     pointsWinner === 1 ? 'color: #FF6B6B; font-weight: bold;' : 'font-weight: bold;';
             
             // 确定车手排名领先方
-            const standingWinner = parseInt(data.driver1Standing) < parseInt(data.driver2Standing) ? 1 : 
-                                parseInt(data.driver1Standing) > parseInt(data.driver2Standing) ? 2 : 0;
+            const standingWinner = parseInt(data.driver1Standing, 10) < parseInt(data.driver2Standing, 10) ? 1 :
+                                parseInt(data.driver1Standing, 10) > parseInt(data.driver2Standing, 10) ? 2 : 0;
             
             const driver1StandingStyle = standingWinner === 1 ? 'color: #3CB371; font-weight: bold;' : 
                                       standingWinner === 2 ? 'color: #FF6B6B; font-weight: bold;' : 'font-weight: bold;';
@@ -1125,7 +1149,9 @@ async function showHistoryResults() {
             let championPoints = 0;
             let championId = null;
             Object.entries(std || {}).forEach(([did, v]) => {
-                if (!championId || parseInt(v.position,10) < parseInt(std[championId].position,10)) {
+                const posV = parseInt(v?.position, 10);
+                if (!Number.isFinite(posV)) return;
+                if (!championId || posV < parseInt(std[championId].position, 10)) {
                     championId = did;
                 }
             });
@@ -1148,8 +1174,8 @@ async function showHistoryResults() {
                     pairRows: list.length,
                     pairOnlyTeamPoints,
                     seasonChampionPoints: championPoints,
-                    includedRounds: Array.from(unionIncluded).sort((a,b)=>parseInt(a)-parseInt(b)),
-                    teamAllRounds: allRounds.sort((a,b)=>parseInt(a)-parseInt(b)),
+                    includedRounds: Array.from(unionIncluded).sort((a,b)=>parseInt(a,10)-parseInt(b,10)),
+                    teamAllRounds: allRounds.sort((a,b)=>parseInt(a,10)-parseInt(b,10)),
                     excludedRounds: excludedDetail,
                     note: '配对仅计的两行积分与当年WDC冠军积分对比，若不足，则列出未计入的该队轮次（原因：当站两位被比较车手未同时为该队出战）。'
                 });
@@ -1188,7 +1214,7 @@ async function showHistoryResults() {
             const excludedList = excluded.map(rd => `<li>第 ${rd} 站：${(r.teamRoundNames||{})[rd] || 'N/A'}</li>`).join('');
             const exHtml = excluded.length ? `<ul style="margin:6px 0 0 18px; text-align:left;">${excludedList}</ul>` : `<div style="margin-top:6px;">无被排除轮次</div>`;
             // Build per-race accounting details for transparency
-            const details = Array.isArray(r.perRaceLog) ? r.perRaceLog.filter(x=>x.used).sort((a,b)=>parseInt(a.round)-parseInt(b.round)) : [];
+            const details = Array.isArray(r.perRaceLog) ? r.perRaceLog.filter(x=>x.used).sort((a,b)=>parseInt(a.round,10)-parseInt(b.round,10)) : [];
             const detailHtml = details.length ? `<table style="margin:6px 0; width:100%; max-width:1000px; background:#fff; border:1px solid #eee;">
                     <tr style="background:#f0f7ff;"><th style="padding:4px 6px;">轮次</th><th style="padding:4px 6px;">分站</th><th style="padding:4px 6px;">${r.driver1Code} 积分</th><th style="padding:4px 6px;">${r.driver2Code} 积分</th></tr>
                     ${details.map(d => {
@@ -1267,10 +1293,10 @@ async function showHistoryResults() {
             }
             const entries = Array.from(agg.entries()).map(([did, v]) => {
                 const diff = Number((v.seasonPoints - v.pairOnlySum).toFixed(3));
-                const unionRounds = Array.from(v.includedUnion).sort((a,b)=>parseInt(a)-parseInt(b));
+                const unionRounds = Array.from(v.includedUnion).sort((a,b)=>parseInt(a,10)-parseInt(b,10));
                 // Note: 若 union 覆盖了该队全部轮次且仍不等，通常是该车手在其它车队也获得了积分（WDC统计为全年）。
                 const any = list[0];
-                const allRounds = (any.teamAllRounds||[]).map(String).sort((a,b)=>parseInt(a)-parseInt(b));
+                const allRounds = (any.teamAllRounds||[]).map(String).sort((a,b)=>parseInt(a,10)-parseInt(b,10));
                 const missingTeamRounds = allRounds.filter(x => !v.includedUnion.has(String(x)));
                 let reason = '';
                 if (missingTeamRounds.length === 0 && Math.abs(diff) > 1e-6 && !v.sprintOkAll) {
@@ -1799,14 +1825,14 @@ async function showYearResults() {
                                        pointsWinner === 2 ? 'color: #FF6B6B; font-weight: bold;' : 'font-weight: bold;';
             const driver2PointsStyle = pointsWinner === 2 ? 'color: #3CB371; font-weight: bold;' : 
                                        pointsWinner === 1 ? 'color: #FF6B6B; font-weight: bold;' : 'font-weight: bold;';
-            const standingWinner = parseInt(data.driver1Standing) < parseInt(data.driver2Standing) ? 1 : 
-                                   parseInt(data.driver1Standing) > parseInt(data.driver2Standing) ? 2 : 0;
+            const standingWinner = parseInt(data.driver1Standing, 10) < parseInt(data.driver2Standing, 10) ? 1 :
+                                   parseInt(data.driver1Standing, 10) > parseInt(data.driver2Standing, 10) ? 2 : 0;
             const driver1StandingStyle = standingWinner === 1 ? 'color: #3CB371; font-weight: bold;' : 
                                           standingWinner === 2 ? 'color: #FF6B6B; font-weight: bold;' : 'font-weight: bold;';
             const driver2StandingStyle = standingWinner === 2 ? 'color: #3CB371; font-weight: bold;' : 
                                           standingWinner === 1 ? 'color: #FF6B6B; font-weight: bold;' : 'font-weight: bold;';
-            const s1 = parseInt(data.driver1Standing);
-            const s2 = parseInt(data.driver2Standing);
+            const s1 = parseInt(data.driver1Standing, 10);
+            const s2 = parseInt(data.driver2Standing, 10);
             const standingDiff = (Number.isFinite(s1) && Number.isFinite(s2)) ? Math.abs(s1 - s2) : 0;
             const ratioDiff = Math.abs((data.driver1Percentage || 0) - (data.driver2Percentage || 0));
             const gridDiff = Math.abs((data.gridWins1 || 0) - gridWins2);
@@ -1918,15 +1944,8 @@ function initYearTab() {
     window.yearTabInitialized = true;
 }
 
-window.switchTabYear = function(tab) {
-    document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
-    document.querySelector(`.tab-button[data-tab="${tab}"]`).classList.add('active');
-    document.getElementById('qualifying-content').style.display = tab === 'qualifying' ? 'block' : 'none';
-    document.getElementById('history-content').style.display = tab === 'history' ? 'block' : 'none';
-    document.getElementById('race-content').style.display = tab === 'race' ? 'block' : 'none';
-    document.getElementById('year-content').style.display = tab === 'year' ? 'block' : 'none';
-    if (tab === 'year') initYearTab();
-};
+// 暴露初始化函数给 index.html 中统一的 switchTab 调用
+window.initYearTabFromSwitch = initYearTab;
 
 // 初始化历史标签
 function initHistoryTab() {
@@ -1949,23 +1968,8 @@ function initHistoryTab() {
     }
 }
 
-// Tab切换函数
-window.switchTabHistory = function(tab) {
-    // 更新活动标签样式
-    document.querySelectorAll('.tab-button').forEach(button => {
-        button.classList.remove('active');
-    });
-    document.querySelector(`.tab-button[data-tab="${tab}"]`).classList.add('active');
-    
-    // 显示/隐藏相应内容
-    document.getElementById('qualifying-content').style.display = tab === 'qualifying' ? 'block' : 'none';
-    document.getElementById('history-content').style.display = tab === 'history' ? 'block' : 'none';
-    
-    // 如果切换到历史标签，初始化它
-    if (tab === 'history') {
-        initHistoryTab();
-    }
-};
+// 暴露初始化函数给 index.html 中统一的 switchTab 调用
+window.initHistoryTabFromSwitch = initHistoryTab;
 
 // 初始化逻辑
 document.addEventListener('DOMContentLoaded', function() {

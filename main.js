@@ -1,16 +1,21 @@
 // 页面加载时初始化
 window.addEventListener("load", () => {
     main();
-    // 绑定清空缓存按钮
+    // 绑定清空缓存按钮（带并发保护 + 短时间冷却，避免快速连点触发多次）
     const clearBtn = document.getElementById('clearCacheBtn');
     const statusSpan = document.getElementById('clearCacheStatus');
     if (clearBtn) {
+        let clearInProgress = false;
+        let clearCooldownUntil = 0;
+        const CLEAR_COOLDOWN_MS = 800;
         clearBtn.addEventListener('click', () => {
+            if (clearInProgress) return;
+            if (Date.now() < clearCooldownUntil) return;
+            clearInProgress = true;
             try {
                 clearBtn.disabled = true;
                 clearBtn.textContent = '清空中…';
                 const result = F1Utils.flushAllCaches?.();
-                // 打印汇总
                 const summary = F1Utils.getCacheSummary?.();
                 console.log('[Cache] Flush result', result);
                 console.log('[Cache] After flush summary', summary);
@@ -22,8 +27,10 @@ window.addEventListener("load", () => {
             } catch (e) {
                 console.warn('清空缓存失败', e);
             } finally {
+                clearCooldownUntil = Date.now() + CLEAR_COOLDOWN_MS;
                 clearBtn.disabled = false;
                 clearBtn.textContent = '清空缓存';
+                clearInProgress = false;
             }
         });
     }
@@ -520,7 +527,7 @@ function createQualifyingTable(results) {
             currentTable.timeDifferences.push(timeDifference);
             currentTable.percentageDifferences.push(percentageDifference);
             // 存储轮次编号和delta百分比
-            currentTable.deltaPercentages.push([parseInt(races[i].round), percentageDifference]);
+            currentTable.deltaPercentages.push([parseInt(races[i].round, 10), percentageDifference]);
 
             if (timeDifference > 0) {
                 currentTable.driver1Better++;
@@ -563,15 +570,18 @@ function addCell(row, text, align) {
 // 添加车队到下拉列表
 function fillConstructorsList(list, currentSelect) {
     const select = document.getElementById("constructorList");
+    if (!select) return;
     select.innerHTML = "";
-    list.MRData.ConstructorTable.Constructors.forEach((elm) => {
+    const constructors = list?.MRData?.ConstructorTable?.Constructors;
+    if (!Array.isArray(constructors)) return;
+    constructors.forEach((elm) => {
         const option = document.createElement("option");
         option.value = elm.name;
-        option.innerHTML = elm.name;
+        option.textContent = elm.name; // 避免 innerHTML 拼接 API 字段
         option.id = elm.constructorId;
         select.appendChild(option);
         // 如果可用，保持当前车队选中
-        if (elm.name == currentSelect) {
+        if (elm.name === currentSelect) {
             select.value = currentSelect;
         }
     });
@@ -580,12 +590,23 @@ function fillConstructorsList(list, currentSelect) {
 async function displayResults() {
     const yearList = document.getElementById("seasonList");
     const constructorList = document.getElementById("constructorList");
-    
+    if (!yearList || !constructorList) return;
+
     const options = constructorList.options;
-    const constructorId = options[options.selectedIndex].id;
+    const selectedIndex = constructorList.selectedIndex;
+    if (selectedIndex < 0 || !options[selectedIndex]) {
+        console.warn('No constructor selected');
+        return;
+    }
+    const constructorId = options[selectedIndex].id;
     const year = yearList.value;
+    if (!constructorId || !year) {
+        console.warn('Missing constructorId or year', { constructorId, year });
+        return;
+    }
 
     const qualifying = await F1Utils.getQualifying(year, constructorId);
+    if (!qualifying) return;
     createQualifyingTable(qualifying);
 }
 
@@ -597,9 +618,14 @@ async function main() {
 
     // 获取赛季数据
     const results = await F1Utils.getSeasons();
-    
+
     if (results) {
-        const seasons = results.MRData.SeasonTable.Seasons.reverse();
+        const seasons = results?.MRData?.SeasonTable?.Seasons;
+        if (!Array.isArray(seasons) || seasons.length === 0) {
+            console.error("赛季数据格式异常");
+            return;
+        }
+        seasons.reverse();
         const currentYear = seasons[0].season;
 
         // 填充排位赛标签的车队列表

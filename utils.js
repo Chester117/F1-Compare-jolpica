@@ -43,27 +43,56 @@ const TEAM_MAPPING = {
     "MoneyGram Haas F1 Team": "Haas"
 };
 
-// 缓存系统
+// 缓存系统（LRU + TTL）
+// 默认 30 分钟 TTL，最多 500 条；可通过 F1Utils.setCacheLimits 调整
+const CACHE_DEFAULT_TTL_MS = 30 * 60 * 1000;
+const CACHE_DEFAULT_MAX_ENTRIES = 500;
 const cache = {
-    data: {},
+    store: new Map(), // url -> { data, expireAt }
+    ttlMs: CACHE_DEFAULT_TTL_MS,
+    maxEntries: CACHE_DEFAULT_MAX_ENTRIES,
     get(url) {
-        return this.data[url];
+        const entry = this.store.get(url);
+        if (!entry) return undefined;
+        if (entry.expireAt && entry.expireAt < Date.now()) {
+            this.store.delete(url);
+            return undefined;
+        }
+        // LRU: 命中后移到末尾
+        this.store.delete(url);
+        this.store.set(url, entry);
+        return entry.data;
     },
     set(url, data) {
-        this.data[url] = data;
+        if (this.store.has(url)) this.store.delete(url);
+        this.store.set(url, { data, expireAt: this.ttlMs > 0 ? Date.now() + this.ttlMs : 0 });
+        while (this.store.size > this.maxEntries) {
+            const oldestKey = this.store.keys().next().value;
+            if (oldestKey === undefined) break;
+            this.store.delete(oldestKey);
+        }
     },
     has(url) {
-        return Object.prototype.hasOwnProperty.call(this.data, url);
+        const entry = this.store.get(url);
+        if (!entry) return false;
+        if (entry.expireAt && entry.expireAt < Date.now()) {
+            this.store.delete(url);
+            return false;
+        }
+        return true;
     },
     size() {
-        return Object.keys(this.data).length;
+        return this.store.size;
     },
     clear() {
-        const count = this.size();
-        this.data = {};
+        const count = this.store.size;
+        this.store.clear();
         return count;
     }
 };
+
+// 进行中的请求去重：同一 URL 并发请求只发一次，所有调用方共享 Promise
+const pendingRequests = new Map(); // url -> Promise
 
 // 全局调试开关（默认关闭）。可在控制台执行 F1Utils.setDebug(true) 打开详细日志
 if (typeof window !== 'undefined' && typeof window.__F1_DEBUG === 'undefined') {
@@ -84,6 +113,14 @@ let currentDelayBetweenRequests = BASE_DELAY_BETWEEN_REQUESTS;
 const MAX_DELAY_BETWEEN_REQUESTS = 6000; // 上限 6s
 const MIN_DELAY_BETWEEN_REQUESTS = 200;  // 下限 200ms
 let lastBackoffAt = 0;
+
+// 退避/抖动相关常量（集中管理，便于调优）
+const BACKOFF_DEFAULT_WAIT_MS = 1500;
+const BACKOFF_JITTER_MAX_MS = 300;
+const BACKOFF_GROWTH_FACTOR = 1.6;
+const BACKOFF_GROWTH_ADDEND = 150;
+const DELAY_DECAY_FACTOR = 0.9;
+const MAX_RETRY_429 = 4;
 
 // 失败请求收集（用于“继续获取”重试）
 const failedRequests = new Set();
@@ -133,8 +170,8 @@ async function processQueue() {
                 cache.set(url, data);
                 resolve(data);
                 // 成功后尝试缓慢衰减全局延迟
-                currentDelayBetweenRequests = Math.max(MIN_DELAY_BETWEEN_REQUESTS, Math.floor(currentDelayBetweenRequests * 0.9));
-            } else if (response.status === 429 && retryCount < 4) {
+                currentDelayBetweenRequests = Math.max(MIN_DELAY_BETWEEN_REQUESTS, Math.floor(currentDelayBetweenRequests * DELAY_DECAY_FACTOR));
+            } else if (response.status === 429 && retryCount < MAX_RETRY_429) {
                 // 429：读取 Retry-After，指数退避+抖动，并通知 UI
                 const ra = parseInt(response.headers.get('Retry-After') || '0', 10);
                 const suggested = Number.isFinite(ra) && ra > 0 ? ra * 1000 : 0;
@@ -144,12 +181,12 @@ async function processQueue() {
                 if (suggested > 0) {
                     currentDelayBetweenRequests = Math.min(MAX_DELAY_BETWEEN_REQUESTS, Math.max(currentDelayBetweenRequests, suggested));
                 } else {
-                    currentDelayBetweenRequests = Math.min(MAX_DELAY_BETWEEN_REQUESTS, Math.floor(currentDelayBetweenRequests * 1.6 + 150));
+                    currentDelayBetweenRequests = Math.min(MAX_DELAY_BETWEEN_REQUESTS, Math.floor(currentDelayBetweenRequests * BACKOFF_GROWTH_FACTOR + BACKOFF_GROWTH_ADDEND));
                 }
                 // 抖动
-                const jitter = Math.floor(Math.random() * 300);
-                const waitMs = (suggested || 1500) + jitter;
-                console.warn(`Rate limited for ${url}, retry later (${retryCount + 1}/4). Backoff ${waitMs}ms, global delay=${currentDelayBetweenRequests}ms`);
+                const jitter = Math.floor(Math.random() * BACKOFF_JITTER_MAX_MS);
+                const waitMs = (suggested || BACKOFF_DEFAULT_WAIT_MS) + jitter;
+                console.warn(`Rate limited for ${url}, retry later (${retryCount + 1}/${MAX_RETRY_429}). Backoff ${waitMs}ms, global delay=${currentDelayBetweenRequests}ms`);
                 if (typeof window !== 'undefined' && window.F1RequestEvents) {
                     window.F1RequestEvents.emit('ratelimit', { url, retryCount, waitMs, globalDelay: currentDelayBetweenRequests });
                 }
@@ -189,21 +226,31 @@ async function processQueue() {
 
 // 数据获取函数
 async function fetchData(url) {
-    // 检查缓存中是否已有数据
-    if (cache.has(url)) {
+    // 检查缓存中是否已有数据（单次 get 避免 has/get 之间 TTL 边界 race）
+    const cached = cache.get(url);
+    if (cached !== undefined) {
         debugLog(`Using cached data for: ${url}`);
-        return cache.get(url);
+        return cached;
     }
 
-    // 创建新的请求并添加到队列
-    return new Promise((resolve, reject) => {
-        requestQueue.push({ url, resolve, reject, retryCount: 0 });
+    // 同一 URL 已经在请求队列里 → 复用同一个 Promise，避免并发重复请求
+    const inflight = pendingRequests.get(url);
+    if (inflight) {
+        debugLog(`Reusing in-flight request: ${url}`);
+        return inflight;
+    }
 
-        // 开始处理队列（如果尚未处理）
+    const promise = new Promise((resolve, reject) => {
+        requestQueue.push({ url, resolve, reject, retryCount: 0 });
         if (!isProcessingQueue) {
             processQueue();
         }
     });
+    pendingRequests.set(url, promise);
+    // 无论成功/失败都从 pending 移除
+    const cleanup = () => { pendingRequests.delete(url); };
+    promise.then(cleanup, cleanup);
+    return promise;
 }
 
 // 重试失败的请求（仅针对之前失败过且未缓存成功的 URL）
@@ -287,7 +334,8 @@ async function getConstructorResults(year, constructorId) {
 
 // 正赛：获取某位车手在某站的每圈圈速
 async function getRaceLaps(year, round, driverId) {
-    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/${round}/drivers/${driverId}/laps.json?limit=2000`);
+    // jolpica 单车手单场圈数最多 ~78 圈（Monaco），limit=100 够用且与 API 上限一致
+    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/${round}/drivers/${driverId}/laps.json?limit=100`);
 }
 
 // 正赛：获取某位车手在某站的进站信息（用于识别进站圈/出站圈）
@@ -320,6 +368,24 @@ function normalizeTeamName(teamName) {
     return TEAM_MAPPING[teamName] || teamName;
 }
 
+// 在 innerHTML 拼接前转义文本字段（来自 API 的车手/车队/分站名等）
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    const str = String(value);
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function setCacheLimits({ ttlMs, maxEntries } = {}) {
+    if (Number.isFinite(ttlMs) && ttlMs >= 0) cache.ttlMs = ttlMs;
+    if (Number.isFinite(maxEntries) && maxEntries > 0) cache.maxEntries = Math.floor(maxEntries);
+    return { ttlMs: cache.ttlMs, maxEntries: cache.maxEntries, size: cache.size() };
+}
+
 // 时间处理函数
 function millisecondsToStruct(time) {
     const isNegative = time < 0;
@@ -332,21 +398,33 @@ function millisecondsToStruct(time) {
 }
 
 // 将时间字符串转换为毫秒
+// 支持 "M:SS.sss" 或 "SS.sss"；输入非法时返回 NaN（调用方按需处理）
 function convertTimeString(time) {
+    if (typeof time !== 'string' || !time) return NaN;
     const tkns = time.split(":");
     let milliseconds = 0;
-    
+
     if (tkns.length === 2) {
         // Format: MM:SS.sss
-        milliseconds = parseInt(tkns[0]) * 60000;
+        const min = parseInt(tkns[0], 10);
         const tkns2 = tkns[1].split(".");
-        milliseconds += parseInt(tkns2[0]) * 1000 + parseInt(tkns2[1]);
-    } else {
+        if (tkns2.length !== 2) return NaN;
+        const sec = parseInt(tkns2[0], 10);
+        const ms = parseInt(tkns2[1], 10);
+        if (!Number.isFinite(min) || !Number.isFinite(sec) || !Number.isFinite(ms)) return NaN;
+        milliseconds = min * 60000 + sec * 1000 + ms;
+    } else if (tkns.length === 1) {
         // Format: SS.sss
         const tkns2 = tkns[0].split(".");
-        milliseconds = parseInt(tkns2[0]) * 1000 + parseInt(tkns2[1]);
+        if (tkns2.length !== 2) return NaN;
+        const sec = parseInt(tkns2[0], 10);
+        const ms = parseInt(tkns2[1], 10);
+        if (!Number.isFinite(sec) || !Number.isFinite(ms)) return NaN;
+        milliseconds = sec * 1000 + ms;
+    } else {
+        return NaN;
     }
-    
+
     return milliseconds;
 }
 
@@ -414,9 +492,10 @@ function newTd(text, bold, styleOptions) {
 
 // 统计分析函数
 function calculateMedian(numbers) {
-    if (numbers.length === 0) return 0;
-    
-    const sorted = numbers.sort((a, b) => a - b);
+    if (!numbers || numbers.length === 0) return 0;
+
+    // 拷贝后再排序，避免修改调用方的原数组
+    const sorted = [...numbers].sort((a, b) => a - b);
     const middle = Math.floor(sorted.length / 2);
 
     if (sorted.length % 2 === 0) {
@@ -432,32 +511,66 @@ function calculateAverage(arr) {
 }
 
 // Bootstrap置信区间计算
-function bootstrapConfidenceInterval(data, confidence = 0.95, iterations = 10000) {
-    if (data.length < 2) return { lower: NaN, upper: NaN };
-    
-    // 有放回抽样函数
-    const sample = (arr) => {
-        const result = new Array(arr.length);
-        for (let i = 0; i < arr.length; i++) {
-            result[i] = arr[Math.floor(Math.random() * arr.length)];
+// 内部针对每次重采样使用 O(n) 的快速中位数，避免 10000 次重排导致的明显卡顿
+function bootstrapConfidenceInterval(data, confidence = 0.95, iterations = 5000) {
+    if (!data || data.length < 2) return { lower: NaN, upper: NaN };
+
+    // 过滤非有限值，避免 NaN 进入 quickselect 导致死循环
+    const cleaned = [];
+    for (const v of data) if (Number.isFinite(v)) cleaned.push(v);
+    if (cleaned.length < 2) return { lower: NaN, upper: NaN };
+    data = cleaned;
+    const n = data.length;
+    // 复用 buffer，减少 GC 压力
+    const buf = new Float64Array(n);
+
+    // 基于 quickselect 的中位数：O(n)，原地操作 buf
+    const quickselect = (arr, k, left, right) => {
+        while (left < right) {
+            // 三数取中作为枢轴，提高对已排序输入的鲁棒性
+            const mid = (left + right) >> 1;
+            if (arr[left] > arr[right]) { const t = arr[left]; arr[left] = arr[right]; arr[right] = t; }
+            if (arr[mid]  > arr[right]) { const t = arr[mid];  arr[mid]  = arr[right]; arr[right] = t; }
+            if (arr[left] > arr[mid])   { const t = arr[left]; arr[left] = arr[mid];   arr[mid]   = t; }
+            const pivot = arr[mid];
+            let i = left, j = right;
+            while (i <= j) {
+                while (arr[i] < pivot) i++;
+                while (arr[j] > pivot) j--;
+                if (i <= j) {
+                    const t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+                    i++; j--;
+                }
+            }
+            if (k <= j) right = j;
+            else if (k >= i) left = i;
+            else return arr[k];
         }
-        return result;
+        return arr[left];
     };
-    
-    // 生成bootstrap样本并计算中位数
-    const bootstrapMedians = new Array(iterations);
+    const fastMedian = () => {
+        const mid = n >> 1;
+        if ((n & 1) === 1) return quickselect(buf, mid, 0, n - 1);
+        const hi = quickselect(buf, mid, 0, n - 1);
+        const lo = quickselect(buf, mid - 1, 0, n - 1);
+        return (hi + lo) / 2;
+    };
+
+    const bootstrapMedians = new Float64Array(iterations);
     for (let i = 0; i < iterations; i++) {
-        const sampleData = sample(data);
-        bootstrapMedians[i] = calculateMedian(sampleData);
+        for (let j = 0; j < n; j++) {
+            buf[j] = data[(Math.random() * n) | 0];
+        }
+        bootstrapMedians[i] = fastMedian();
     }
-    
-    // 排序中位数，找到基于百分位的置信区间
-    bootstrapMedians.sort((a, b) => a - b);
-    
+
+    // Float64Array 没有自定义 sort，但默认数值排序就是我们要的
+    bootstrapMedians.sort();
+
     const alpha = 1 - confidence;
     const lowerIndex = Math.floor((alpha / 2) * iterations);
-    const upperIndex = Math.floor((1 - alpha / 2) * iterations);
-    
+    const upperIndex = Math.min(iterations - 1, Math.floor((1 - alpha / 2) * iterations));
+
     return {
         lower: bootstrapMedians[lowerIndex],
         upper: bootstrapMedians[upperIndex]
@@ -491,6 +604,8 @@ window.F1Utils = {
     
     // 车队处理
     normalizeTeamName,
+    escapeHtml,
+    setCacheLimits,
     
     // 时间处理
     millisecondsToStruct,
