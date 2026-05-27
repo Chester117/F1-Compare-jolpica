@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flying Lap Compare</title>
     <meta name="theme-color" content="#0b0b0d">
-    <link rel="stylesheet" href="style.css?v=lap-distribution-1">
+    <link rel="stylesheet" href="style.css?v=lap-distribution-2">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
     <!-- External Libraries (self-hosted in ./vendor/ to avoid CDN/Cloudflare blocks) -->
     <script src="vendor/highcharts.js" defer></script>
@@ -13,11 +13,11 @@
     <script src="vendor/offline-exporting.js" defer></script>
     <!-- Application Scripts -->
     <script src="utils.js" defer></script>
-    <script src="QualifyingTrendGraph.js?v=lap-distribution-1" defer></script>
+    <script src="QualifyingTrendGraph.js?v=lap-distribution-2" defer></script>
     <script src="history.js" defer></script>
     <script src="race.js" defer></script>
-    <script src="lapDistribution.js?v=lap-distribution-1" defer></script>
-    <script src="main.js?v=lap-distribution-1" defer></script>
+    <script src="lapDistribution.js?v=lap-distribution-2" defer></script>
+    <script src="main.js?v=lap-distribution-2" defer></script>
 </head>
 <body>
     <div class="app-frame">
@@ -101,6 +101,21 @@
                 <option value="1.20">过滤 120%+</option>
                 <option value="1.30">过滤 130%+</option>
             </select>
+            <button class="selector lap-mode-toggle" id="lapDistModeToggle" type="button">切换 Box Plot</button>
+            <label class="selector lap-tool-toggle" title="显示或隐藏每一圈的散点。">
+                <input type="checkbox" id="lapDistShowPoints" checked>
+                散点
+            </label>
+            <label class="selector lap-tool-toggle" title="显示或隐藏每位车手的中位圈速线。">
+                <input type="checkbox" id="lapDistShowMedian" checked>
+                中位线
+            </label>
+            <label class="selector lap-tool-toggle" title="显示或隐藏图例。">
+                <input type="checkbox" id="lapDistShowLegend" checked>
+                图例
+            </label>
+            <button class="selector" id="lapDistResetView" type="button">重置视图</button>
+            <button class="selector" id="lapDistDownloadSvg" type="button">下载 SVG</button>
             <button class="selector primary-action" id="lapDistGo">生成圈速图</button>
         </div>
         <div class="lap-dist-meta" id="lapDistMeta"></div>
