@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flying Lap Compare</title>
     <meta name="theme-color" content="#0b0b0d">
-    <link rel="stylesheet" href="style.css?v=table-polish-1">
+    <link rel="stylesheet" href="style.css?v=lap-distribution-1">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
     <!-- External Libraries (self-hosted in ./vendor/ to avoid CDN/Cloudflare blocks) -->
     <script src="vendor/highcharts.js" defer></script>
@@ -13,10 +13,11 @@
     <script src="vendor/offline-exporting.js" defer></script>
     <!-- Application Scripts -->
     <script src="utils.js" defer></script>
-    <script src="QualifyingTrendGraph.js?v=table-polish-1" defer></script>
+    <script src="QualifyingTrendGraph.js?v=lap-distribution-1" defer></script>
     <script src="history.js" defer></script>
     <script src="race.js" defer></script>
-    <script src="main.js?v=table-polish-1" defer></script>
+    <script src="lapDistribution.js?v=lap-distribution-1" defer></script>
+    <script src="main.js?v=lap-distribution-1" defer></script>
 </head>
 <body>
     <div class="app-frame">
@@ -42,6 +43,7 @@
         <nav class="banner" aria-label="Comparison modes">
             <button class="tab-button active" type="button" data-tab="qualifying" onclick="switchTab('qualifying')">排位赛</button>
             <button class="tab-button" type="button" data-tab="race" onclick="switchTab('race')">正赛</button>
+            <button class="tab-button" type="button" data-tab="lapDistribution" onclick="switchTab('lapDistribution')">圈速图</button>
             <button class="tab-button" type="button" data-tab="history" onclick="switchTab('history')">队友历史</button>
             <button class="tab-button" type="button" data-tab="year" onclick="switchTab('year')">年份榜单</button>
         </nav>
@@ -83,6 +85,28 @@
             <button class="selector primary-action" id="yearGo">分析</button>
         </div>
         <div class="flex-container-table" id="yearTable"></div>
+    </section>
+    <section id="lap-distribution-content" class="view-panel" style="display: none;">
+        <div class="content-heading">
+            <span class="section-label">MODE 05</span>
+            <h2 class="flex-title">单场圈速分布</h2>
+        </div>
+        <div class="flex-container-options">
+            <select class="selector" id="lapDistSeasonList" name="lapDistSeasonList"></select>
+            <select class="selector" id="lapDistRaceList" name="lapDistRaceList"></select>
+            <select class="selector" id="lapDistFilter" title="过滤明显慢于本车手最快圈的异常圈；图中点颜色是相对速度分段，不代表轮胎配方。">
+                <option value="none">显示全部圈</option>
+                <option value="1.12">过滤 112%+</option>
+                <option value="1.15" selected>过滤 115%+</option>
+                <option value="1.20">过滤 120%+</option>
+                <option value="1.30">过滤 130%+</option>
+            </select>
+            <button class="selector primary-action" id="lapDistGo">生成圈速图</button>
+        </div>
+        <div class="lap-dist-meta" id="lapDistMeta"></div>
+        <div class="lap-dist-shell" id="lapDistChart">
+            <div class="lap-dist-empty">选择年份和比赛后生成全场车手圈速分布。</div>
+        </div>
     </section>
     <section id="race-content" class="view-panel" style="display: none;">
         <div class="content-heading">
@@ -130,6 +154,7 @@
         const TAB_PANELS = {
             qualifying: 'qualifying-content',
             race:       'race-content',
+            lapDistribution: 'lap-distribution-content',
             history:    'history-content',
             year:       'year-content'
         };
@@ -155,6 +180,8 @@
                 window.initHistoryTabFromSwitch();
             } else if (tab === 'race' && typeof window.initRaceTabFromSwitch === 'function') {
                 window.initRaceTabFromSwitch();
+            } else if (tab === 'lapDistribution' && typeof window.initLapDistributionTabFromSwitch === 'function') {
+                window.initLapDistributionTabFromSwitch();
             } else if (tab === 'year' && typeof window.initYearTabFromSwitch === 'function') {
                 window.initYearTabFromSwitch();
             }

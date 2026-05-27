@@ -332,6 +332,11 @@ async function getConstructorResults(year, constructorId) {
     return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/constructors/${constructorId}/results.json?limit=1000`);
 }
 
+// 正赛：获取某站所有车手的正式比赛结果（用于识别全场车手顺序）
+async function getRaceResults(year, round) {
+    return fetchData(`https://api.jolpi.ca/ergast/f1/${year}/${round}/results.json?limit=100`);
+}
+
 // 正赛：获取某位车手在某站的每圈圈速
 async function getRaceLaps(year, round, driverId) {
     // jolpica 单车手单场圈数最多 ~78 圈（Monaco），limit=100 够用且与 API 上限一致
@@ -594,6 +599,7 @@ window.F1Utils = {
     getConstructors,
     getQualifying,
     getConstructorResults,
+    getRaceResults,
     getRaceLaps,
     getDriverPitStops,
     getSprintResults,

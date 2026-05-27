@@ -728,7 +728,7 @@ body::before {
     top: 12px;
     z-index: 20;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 8px;
     margin: 18px 0;
     padding: 8px;
@@ -1175,6 +1175,152 @@ tr:nth-child(even) td {
 
 .quali-score {
     color: #fff;
+}
+
+.lap-dist-meta {
+    min-height: 22px;
+    margin: -6px 0 14px;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.lap-dist-meta.ready {
+    color: #b9c6d8;
+}
+
+.lap-dist-meta.error {
+    color: #ff9aa5;
+}
+
+.lap-dist-meta.loading {
+    color: var(--amber);
+}
+
+.lap-dist-shell {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(0,0,0,0.24);
+    box-shadow: 0 18px 55px rgba(0,0,0,0.28);
+    overflow: hidden;
+}
+
+.lap-dist-scroll {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.lap-dist-empty {
+    min-height: 420px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 28px;
+    color: var(--muted);
+    font-size: 16px;
+    font-weight: 800;
+    text-align: center;
+}
+
+.lap-dist-svg {
+    display: block;
+    min-width: 100%;
+    height: auto;
+    font-family: 'Noto Sans SC', 'Source Han Sans SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+}
+
+.lap-chart-bg {
+    fill: #e7eaf1;
+}
+
+.lap-chart-title,
+.lap-chart-subtitle {
+    fill: #383b47;
+    font-weight: 700;
+}
+
+.lap-chart-title {
+    font-size: 23px;
+}
+
+.lap-chart-subtitle {
+    font-size: 22px;
+}
+
+.lap-grid-line {
+    stroke: rgba(126, 132, 148, 0.26);
+    stroke-width: 1;
+}
+
+.lap-axis-base {
+    stroke: rgba(68, 72, 84, 0.38);
+    stroke-width: 1;
+}
+
+.lap-axis-label,
+.lap-y-title,
+.lap-x-title,
+.lap-driver-code {
+    fill: #4f5360;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.lap-y-title,
+.lap-x-title {
+    font-size: 18px;
+}
+
+.lap-driver-code {
+    font-size: 15px;
+}
+
+.lap-violin {
+    fill: color-mix(in srgb, var(--driver-color) 68%, #ffffff 18%);
+    stroke: color-mix(in srgb, var(--driver-color) 76%, #111217 24%);
+    stroke-width: 1.6;
+    opacity: 0.82;
+}
+
+.lap-driver-spine {
+    stroke: rgba(17, 18, 23, 0.48);
+    stroke-width: 1.2;
+}
+
+.lap-driver-median {
+    stroke: rgba(17, 18, 23, 0.82);
+    stroke-width: 2;
+}
+
+.lap-point {
+    stroke: rgba(17, 18, 23, 0.62);
+    stroke-width: 0.8;
+    opacity: 0.9;
+}
+
+.lap-point-fast {
+    fill: #d9272e;
+}
+
+.lap-point-regular {
+    fill: #ffd047;
+}
+
+.lap-point-slow {
+    fill: #f2f4f8;
+}
+
+.lap-legend rect {
+    fill: rgba(226, 230, 238, 0.78);
+    stroke: rgba(76, 82, 96, 0.34);
+}
+
+.lap-legend text {
+    fill: #424652;
+    font-size: 15px;
+    font-weight: 700;
 }
 
 .app-footer {
