@@ -12,6 +12,7 @@ https://api.jolpi.ca/ergast/f1/
 
 - Compare qualifying performance between teammates.
 - Track pure pace and official qualifying position head-to-head scores, including ties.
+- Count one-driver-only valid Q3/Q2 times as head-to-head wins without including them in lap-time delta statistics.
 - View historical teammate statistics across one or more seasons.
 - Analyze qualifying trends with filtering, trend lines, and chart export.
 - Compare race median lap pace with optional pit in/out lap filtering.

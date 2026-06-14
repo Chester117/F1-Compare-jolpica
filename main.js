@@ -133,7 +133,7 @@ function createTable(driver1, driver2) {
                     <li><strong>Average % difference</strong>：平均百分比差距（%），用时间差占更快者用时的百分比来衡量，便于不同赛道/圈速之间横向比较。</li>
                     <li><strong>Median % difference</strong>：百分比差距的中位数，同样更稳健地反映典型表现。</li>
                     <li><strong>95% CI (Bootstrap)</strong>：基于自助法（Bootstrap）的95%置信区间，表示在重复抽样的意义下，我们有约95%的把握该总体指标会落在此区间内。</li>
-                    <li><strong>Qualifying score</strong>：两位车手在同场排位赛中谁更快的计分统计（例如 8-6），更像胜场统计，强调“次数”而非差距大小。</li>
+                    <li><strong>Qualifying score</strong>：两位车手在同场排位赛中谁更快的计分统计（例如 8-6）。若双方都进入同一更高阶段但只有一人有有效成绩，则计为有效成绩者胜出，但不纳入时间差统计。</li>
                   </ul>
                 </div>
                 <div class="explain-section">
@@ -506,6 +506,20 @@ function createQualifyingTable(results) {
             currentTable.trueRaceCount++;
             if (pos1 < pos2) currentTable.driver1TrueWins++;
             else if (pos1 === pos2) currentTable.trueTies++;
+        }
+
+        if (comparison.uncontestedWinner) {
+            currentTable.raceCount++;
+            if (comparison.uncontestedWinner === 1) currentTable.driver1Better++;
+
+            tr.classList.add(comparison.uncontestedWinner === 1 ? "driver-one-faster" : "driver-two-faster");
+            addCell(tr, comparison.reason || "Valid time only", "center");
+            addCell(tr, "N/A", "center");
+            const sessionCell = addCell(tr, comparison.sessionUsed || "N/A", "center");
+            if (comparison.sessionUsed) {
+                sessionCell.classList.add("session-badge-cell", `session-${comparison.sessionUsed.toLowerCase()}`);
+            }
+            continue;
         }
 
         if (!comparison.sessionUsed || !comparison.d1Time || !comparison.d2Time) {

@@ -504,7 +504,10 @@ async function processDriverPairData(year, actualConstructorId, normalizedName, 
 
         const comparison = F1Utils.compareQualifyingTimes(d1Times, d2Times);
 
-        if (comparison.sessionUsed && comparison.d1Time && comparison.d2Time) {
+        if (comparison.uncontestedWinner) {
+            totalRaces++;
+            if (comparison.uncontestedWinner === 1) driver1Wins++;
+        } else if (comparison.sessionUsed && comparison.d1Time && comparison.d2Time) {
             const d1TimeMs = F1Utils.convertTimeString(comparison.d1Time);
             const d2TimeMs = F1Utils.convertTimeString(comparison.d2Time);
             if (!Number.isFinite(d1TimeMs) || !Number.isFinite(d2TimeMs)) return;

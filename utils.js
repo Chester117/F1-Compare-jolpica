@@ -565,10 +565,12 @@ function newDriver(d) {
 // 获取车手最佳时间
 function getDriverBestTime(driver) {
     debugLog('Driver qualifying data:', driver);
+    const position = parseInt(driver.position, 10);
     const times = {
         Q1: driver.Q1 || null,
         Q2: driver.Q2 || null,
-        Q3: driver.Q3 || null
+        Q3: driver.Q3 || null,
+        position: Number.isFinite(position) ? position : null
     };
     debugLog('Driver best times:', times);
     return times;
@@ -576,25 +578,50 @@ function getDriverBestTime(driver) {
 
 // 比较两个车手的排位赛时间
 function compareQualifyingTimes(driver1Times, driver2Times) {
-    let sessionUsed = null;
-    let d1Time = null;
-    let d2Time = null;
+    const sessions = [
+        { key: 'Q3', cutoff: 10 },
+        { key: 'Q2', cutoff: 15 },
+        { key: 'Q1', cutoff: Infinity }
+    ];
 
-    if (driver1Times.Q3 && driver2Times.Q3) {
-        sessionUsed = "Q3";
-        d1Time = driver1Times.Q3;
-        d2Time = driver2Times.Q3;
-    } else if (driver1Times.Q2 && driver2Times.Q2) {
-        sessionUsed = "Q2";
-        d1Time = driver1Times.Q2;
-        d2Time = driver2Times.Q2;
-    } else if (driver1Times.Q1 && driver2Times.Q1) {
-        sessionUsed = "Q1";
-        d1Time = driver1Times.Q1;
-        d2Time = driver2Times.Q1;
+    const reachedSession = (times, session) => {
+        if (times[session.key]) return true;
+        if (!Number.isFinite(times.position)) return false;
+        return times.position <= session.cutoff;
+    };
+
+    for (const session of sessions) {
+        const d1Reached = reachedSession(driver1Times, session);
+        const d2Reached = reachedSession(driver2Times, session);
+        if (!d1Reached || !d2Reached) continue;
+
+        const d1Time = driver1Times[session.key] || null;
+        const d2Time = driver2Times[session.key] || null;
+
+        if (d1Time && d2Time) {
+            return { sessionUsed: session.key, d1Time, d2Time, uncontestedWinner: null, reason: null };
+        }
+
+        if (d1Time || d2Time) {
+            return {
+                sessionUsed: session.key,
+                d1Time,
+                d2Time,
+                uncontestedWinner: d1Time ? 1 : 2,
+                reason: `${session.key} valid time by one driver only`
+            };
+        }
+
+        return {
+            sessionUsed: session.key,
+            d1Time: null,
+            d2Time: null,
+            uncontestedWinner: null,
+            reason: `No valid ${session.key} time`
+        };
     }
 
-    return { sessionUsed, d1Time, d2Time };
+    return { sessionUsed: null, d1Time: null, d2Time: null, uncontestedWinner: null, reason: null };
 }
 
 // 创建表格单元格
