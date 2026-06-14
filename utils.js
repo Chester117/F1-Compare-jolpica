@@ -91,6 +91,110 @@ const cache = {
     }
 };
 
+const PERSISTENT_CACHE_PREFIX = 'f1compare:fetch:v1:';
+const PERSISTENT_CACHE_MAX_CHARS = 750000;
+
+function persistentCacheAvailable() {
+    try {
+        return typeof window !== 'undefined' && !!window.localStorage;
+    } catch (_) {
+        return false;
+    }
+}
+
+function persistentCacheKey(url) {
+    return `${PERSISTENT_CACHE_PREFIX}${encodeURIComponent(url)}`;
+}
+
+function getPersistentCache(url) {
+    if (!persistentCacheAvailable()) return undefined;
+    try {
+        const raw = window.localStorage.getItem(persistentCacheKey(url));
+        if (!raw) return undefined;
+        const entry = JSON.parse(raw);
+        if (!entry || !entry.expireAt || entry.expireAt < Date.now()) {
+            window.localStorage.removeItem(persistentCacheKey(url));
+            return undefined;
+        }
+        return entry.data;
+    } catch (_) {
+        return undefined;
+    }
+}
+
+function prunePersistentFetchCache() {
+    if (!persistentCacheAvailable()) return 0;
+    let removed = 0;
+    try {
+        const keys = [];
+        for (let i = 0; i < window.localStorage.length; i++) {
+            const key = window.localStorage.key(i);
+            if (key && key.startsWith(PERSISTENT_CACHE_PREFIX)) keys.push(key);
+        }
+        keys.sort((a, b) => {
+            const av = JSON.parse(window.localStorage.getItem(a) || '{}').savedAt || 0;
+            const bv = JSON.parse(window.localStorage.getItem(b) || '{}').savedAt || 0;
+            return av - bv;
+        });
+        const toRemove = Math.max(1, Math.ceil(keys.length * 0.2));
+        keys.slice(0, toRemove).forEach(key => {
+            window.localStorage.removeItem(key);
+            removed++;
+        });
+    } catch (_) {}
+    return removed;
+}
+
+function setPersistentCache(url, data) {
+    if (!persistentCacheAvailable() || cache.ttlMs <= 0) return;
+    try {
+        const raw = JSON.stringify({
+            savedAt: Date.now(),
+            expireAt: Date.now() + cache.ttlMs,
+            data
+        });
+        if (raw.length > PERSISTENT_CACHE_MAX_CHARS) return;
+        try {
+            window.localStorage.setItem(persistentCacheKey(url), raw);
+        } catch (e) {
+            prunePersistentFetchCache();
+            window.localStorage.setItem(persistentCacheKey(url), raw);
+        }
+    } catch (_) {}
+}
+
+function clearPersistentFetchCache() {
+    if (!persistentCacheAvailable()) return 0;
+    let removed = 0;
+    try {
+        const keys = [];
+        for (let i = 0; i < window.localStorage.length; i++) {
+            const key = window.localStorage.key(i);
+            if (key && key.startsWith(PERSISTENT_CACHE_PREFIX)) keys.push(key);
+        }
+        keys.forEach(key => {
+            window.localStorage.removeItem(key);
+            removed++;
+        });
+    } catch (_) {}
+    return removed;
+}
+
+function getPersistentFetchCacheSummary() {
+    if (!persistentCacheAvailable()) return { entries: 0, approxChars: 0 };
+    let entries = 0;
+    let approxChars = 0;
+    try {
+        for (let i = 0; i < window.localStorage.length; i++) {
+            const key = window.localStorage.key(i);
+            if (!key || !key.startsWith(PERSISTENT_CACHE_PREFIX)) continue;
+            entries++;
+            approxChars += (window.localStorage.getItem(key) || '').length;
+        }
+    } catch (_) {}
+    return { entries, approxChars };
+}
+
 // 进行中的请求去重：同一 URL 并发请求只发一次，所有调用方共享 Promise
 const pendingRequests = new Map(); // url -> Promise
 
@@ -168,6 +272,7 @@ async function processQueue() {
             if (response.ok) {
                 const data = await response.json();
                 cache.set(url, data);
+                setPersistentCache(url, data);
                 resolve(data);
                 // 成功后尝试缓慢衰减全局延迟
                 currentDelayBetweenRequests = Math.max(MIN_DELAY_BETWEEN_REQUESTS, Math.floor(currentDelayBetweenRequests * DELAY_DECAY_FACTOR));
@@ -233,6 +338,13 @@ async function fetchData(url) {
         return cached;
     }
 
+    const persistent = getPersistentCache(url);
+    if (persistent !== undefined) {
+        debugLog(`Using persistent cached data for: ${url}`);
+        cache.set(url, persistent);
+        return persistent;
+    }
+
     // 同一 URL 已经在请求队列里 → 复用同一个 Promise，避免并发重复请求
     const inflight = pendingRequests.get(url);
     if (inflight) {
@@ -276,16 +388,19 @@ function setBaseRateDelay(ms) {
 // 缓存管理函数
 function flushFetchCache() {
     const removed = cache.clear();
-    console.log('[Cache] Cleared fetch cache entries:', removed);
-    return { removed };
+    const persistentRemoved = clearPersistentFetchCache();
+    console.log('[Cache] Cleared fetch cache entries:', { memory: removed, persistent: persistentRemoved });
+    return { removed, persistentRemoved };
 }
 
 function getCacheSummary() {
     const fetchCacheSize = cache.size();
+    const persistentFetchCache = getPersistentFetchCacheSummary();
     const historySummary = typeof window.getHistoryCacheSummary === 'function' ? window.getHistoryCacheSummary() : {};
     const raceSummary = typeof window.getRaceCacheSummary === 'function' ? window.getRaceCacheSummary() : {};
     const summary = {
         fetchCacheSize,
+        persistentFetchCache,
         history: historySummary,
         race: raceSummary
     };
@@ -409,13 +524,18 @@ function convertTimeString(time) {
     const tkns = time.split(":");
     let milliseconds = 0;
 
+    const parseMilliseconds = (value) => {
+        if (!/^\d+$/.test(value || '')) return NaN;
+        return parseInt(value.padEnd(3, '0').slice(0, 3), 10);
+    };
+
     if (tkns.length === 2) {
         // Format: MM:SS.sss
         const min = parseInt(tkns[0], 10);
         const tkns2 = tkns[1].split(".");
         if (tkns2.length !== 2) return NaN;
         const sec = parseInt(tkns2[0], 10);
-        const ms = parseInt(tkns2[1], 10);
+        const ms = parseMilliseconds(tkns2[1]);
         if (!Number.isFinite(min) || !Number.isFinite(sec) || !Number.isFinite(ms)) return NaN;
         milliseconds = min * 60000 + sec * 1000 + ms;
     } else if (tkns.length === 1) {
@@ -423,7 +543,7 @@ function convertTimeString(time) {
         const tkns2 = tkns[0].split(".");
         if (tkns2.length !== 2) return NaN;
         const sec = parseInt(tkns2[0], 10);
-        const ms = parseInt(tkns2[1], 10);
+        const ms = parseMilliseconds(tkns2[1]);
         if (!Number.isFinite(sec) || !Number.isFinite(ms)) return NaN;
         milliseconds = sec * 1000 + ms;
     } else {
@@ -512,7 +632,15 @@ function calculateMedian(numbers) {
 
 // 计算平均值
 function calculateAverage(arr) {
+    if (!arr || arr.length === 0) return NaN;
     return arr.reduce((a, b) => a + b, 0) / arr.length;
+}
+
+function calculateSignedPercentageDelta(timeDifference, timeA, timeB) {
+    if (!Number.isFinite(timeDifference) || !Number.isFinite(timeA) || !Number.isFinite(timeB)) return NaN;
+    const baseline = Math.min(Math.abs(timeA), Math.abs(timeB));
+    if (!Number.isFinite(baseline) || baseline <= 0) return NaN;
+    return (timeDifference / baseline) * 100;
 }
 
 // Bootstrap置信区间计算
@@ -591,6 +719,7 @@ window.F1Utils = {
     fetchData,
     flushFetchCache,
     getCacheSummary,
+    getPersistentFetchCacheSummary,
     flushAllCaches,
     retryFailedRequests,
     getFailedRequestsCount,
@@ -628,6 +757,7 @@ window.F1Utils = {
     // 统计分析
     calculateMedian,
     calculateAverage,
+    calculateSignedPercentageDelta,
     bootstrapConfidenceInterval
 };
 

@@ -234,8 +234,10 @@ function createTable(driver1, driver2) {
         percentageDifferences: [],
         deltaPercentages: [],
         driver1Better: 0,
+        pureTies: 0,
         // True计数（基于官方排位名次 position 更靠前者胜）
         driver1TrueWins: 0,
+        trueTies: 0,
         trueRaceCount: 0,
     };
 }
@@ -413,11 +415,11 @@ function displayMedianResults(currentTable) {
     scoreCellPure.classList.add("quali-score");
     scoreCellPure.colSpan = 5;
     const driver1ScorePure = currentTable.driver1Better;
-    const driver2ScorePure = currentTable.raceCount - currentTable.driver1Better;
-    scoreCellPure.textContent = `${driver1Name} ${driver1ScorePure} - ${driver2ScorePure} ${driver2Name}`;
+    const driver2ScorePure = currentTable.raceCount - currentTable.driver1Better - currentTable.pureTies;
+    scoreCellPure.textContent = `${driver1Name} ${driver1ScorePure} - ${driver2ScorePure} ${driver2Name}${currentTable.pureTies ? ` (${currentTable.pureTies} ties)` : ''}`;
     qualyScorePureTr.appendChild(scoreCellPure);
 
-    // 添加排位赛得分 (true)
+    // 添加官方排位名次得分（基于 position）
     const qualyScoreTrueTr = document.createElement("tr");
     qualyScoreTrueTr.className = "summary-row";
     currentTable.table.appendChild(qualyScoreTrueTr);
@@ -425,7 +427,7 @@ function displayMedianResults(currentTable) {
     const labelCellTrue = document.createElement("td");
     labelCellTrue.className = "summary-label";
     labelCellTrue.colSpan = 2;
-    labelCellTrue.textContent = "Qualifying score (true)";
+    labelCellTrue.textContent = "Qualifying score (official position)";
     qualyScoreTrueTr.appendChild(labelCellTrue);
 
     const scoreCellTrue = document.createElement("td");
@@ -433,8 +435,8 @@ function displayMedianResults(currentTable) {
     scoreCellTrue.classList.add("quali-score");
     scoreCellTrue.colSpan = 5;
     const driver1ScoreTrue = currentTable.driver1TrueWins;
-    const driver2ScoreTrue = currentTable.trueRaceCount - currentTable.driver1TrueWins;
-    scoreCellTrue.textContent = `${driver1Name} ${driver1ScoreTrue} - ${driver2ScoreTrue} ${driver2Name}`;
+    const driver2ScoreTrue = currentTable.trueRaceCount - currentTable.driver1TrueWins - currentTable.trueTies;
+    scoreCellTrue.textContent = `${driver1Name} ${driver1ScoreTrue} - ${driver2ScoreTrue} ${driver2Name}${currentTable.trueTies ? ` (${currentTable.trueTies} ties)` : ''}`;
     qualyScoreTrueTr.appendChild(scoreCellTrue);
 
     // 创建专用的图表容器
@@ -503,6 +505,7 @@ function createQualifyingTable(results) {
         if (Number.isFinite(pos1) && Number.isFinite(pos2)) {
             currentTable.trueRaceCount++;
             if (pos1 < pos2) currentTable.driver1TrueWins++;
+            else if (pos1 === pos2) currentTable.trueTies++;
         }
 
         if (!comparison.sessionUsed || !comparison.d1Time || !comparison.d2Time) {
@@ -510,13 +513,30 @@ function createQualifyingTable(results) {
             addCell(tr, "N/A", "center");
             addCell(tr, "N/A", "center");
         } else {
-            currentTable.raceCount++;
-            
             const d1TimeMs = F1Utils.convertTimeString(comparison.d1Time);
             const d2TimeMs = F1Utils.convertTimeString(comparison.d2Time);
+            if (!Number.isFinite(d1TimeMs) || !Number.isFinite(d2TimeMs)) {
+                addCell(tr, "Invalid time", "center");
+                addCell(tr, "N/A", "center");
+                const sessionCell = addCell(tr, comparison.sessionUsed || "N/A", "center");
+                if (comparison.sessionUsed) {
+                    sessionCell.classList.add("session-badge-cell", `session-${comparison.sessionUsed.toLowerCase()}`);
+                }
+                continue;
+            }
             const timeDifference = d2TimeMs - d1TimeMs;
-            const percentageDifference = (timeDifference / d1TimeMs) * 100;
+            const percentageDifference = F1Utils.calculateSignedPercentageDelta(timeDifference, d1TimeMs, d2TimeMs);
+            if (!Number.isFinite(percentageDifference)) {
+                addCell(tr, "Invalid time", "center");
+                addCell(tr, "N/A", "center");
+                const sessionCell = addCell(tr, comparison.sessionUsed || "N/A", "center");
+                if (comparison.sessionUsed) {
+                    sessionCell.classList.add("session-badge-cell", `session-${comparison.sessionUsed.toLowerCase()}`);
+                }
+                continue;
+            }
 
+            currentTable.raceCount++;
             currentTable.timeDifferences.push(timeDifference);
             currentTable.percentageDifferences.push(percentageDifference);
             // 存储轮次编号和delta百分比
@@ -524,6 +544,8 @@ function createQualifyingTable(results) {
 
             if (timeDifference > 0) {
                 currentTable.driver1Better++;
+            } else if (timeDifference === 0) {
+                currentTable.pureTies++;
             }
 
             const time = F1Utils.millisecondsToStruct(timeDifference);
@@ -616,8 +638,8 @@ async function main() {
             console.error("赛季数据格式异常");
             return;
         }
-        seasons.reverse();
-        const currentYear = seasons[0].season;
+        const seasonListData = seasons.slice().reverse();
+        const currentYear = seasonListData[0].season;
 
         // 填充排位赛标签的车队列表
         const constructorList = await F1Utils.getConstructors(currentYear);
@@ -629,7 +651,7 @@ async function main() {
         }
 
         // 填充排位赛标签的赛季列表
-        seasonList.innerHTML = seasons.map(season => 
+        seasonList.innerHTML = seasonListData.map(season =>
             `<option value="${season.season}">${season.season}</option>`
         ).join('');
     } else {

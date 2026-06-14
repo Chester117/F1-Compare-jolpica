@@ -436,52 +436,6 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
         });
     }
 
-    // Event Handlers
-    function handleFilterChange(threshold) {
-        if (threshold === 0) {
-            state.filteredData = [...data];
-            state.excludedPoints = [];
-            state.activeThreshold = null;
-            container.querySelector('.excluded-points')?.remove();
-        } else {
-            state.excludedPoints = [];
-            state.filteredData = data.map((point, index) => {
-                const [round, value] = point;
-                const absValue = Math.abs(value);
-                if (absValue > threshold) {
-                    state.excludedPoints.push({ 
-                        round: round, 
-                        value: Number(value.toFixed(3)) 
-                    });
-                    return [round, null];
-                }
-                return point;
-            });
-            state.activeThreshold = threshold;
-            
-            if (state.excludedPoints.length) {
-                showExcludedPoints();
-            } else {
-                container.querySelector('.excluded-points')?.remove();
-            }
-        }
-        updateCharts();
-    }
-    
-    function showExcludedPoints() {
-        let excludedDiv = container.querySelector('.excluded-points');
-        if (!excludedDiv) {
-            excludedDiv = document.createElement('div');
-            excludedDiv.className = 'excluded-points';
-            container.appendChild(excludedDiv);
-        }
-        excludedDiv.innerHTML = '<strong>Filtered Out Data Points:</strong><br>' +
-            state.excludedPoints
-                .sort((a, b) => a.round - b.round)
-                .map(p => `Round ${p.round}: ${p.value > 0 ? '+' : ''}${p.value}%`)
-                .join('<br>');
-    }
-
     function toggleZeroLine() {
         state.isZeroLineRed = !state.isZeroLineRed;
         this.classList.toggle('active-button');
@@ -553,14 +507,17 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
         const trends = calculateTrends(validFilteredData);
         
         const validValues = validFilteredData.map(point => point[1]);
-        
-        const yMin = validValues.length > 0 
-            ? Math.min(...validValues) - Math.abs(Math.min(...validValues) * 0.1)
-            : -1;
-        
-        const yMax = validValues.length > 0 
-            ? Math.max(...validValues) + Math.abs(Math.max(...validValues) * 0.1)
-            : 1;
+
+        let yMin = -1;
+        let yMax = 1;
+        if (validValues.length > 0) {
+            const dataMin = Math.min(...validValues, 0);
+            const dataMax = Math.max(...validValues, 0);
+            const span = Math.max(0.1, dataMax - dataMin);
+            const padding = Math.max(0.1, span * 0.1);
+            yMin = dataMin - padding;
+            yMax = dataMax + padding;
+        }
         
         return { data: filteredFullData, trends, yMin, yMax };
     }
