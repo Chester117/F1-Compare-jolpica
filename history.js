@@ -43,7 +43,7 @@ async function fillYearSelectors() {
     const years = await F1Utils.getSeasons();
     if (!years) return;
 
-    const yearOptions = years.MRData.SeasonTable.Seasons.reverse().map(s => s.season);
+    const yearOptions = years.MRData.SeasonTable.Seasons.slice().reverse().map(s => s.season);
     
     const startYearSelect = document.getElementById('startYearList');
     const endYearSelect = document.getElementById('endYearList');
@@ -223,6 +223,20 @@ window.clearHistoryCaches = function() {
     console.log('[History Cache] Cleared', { before, after });
     return { before, after };
 };
+
+function formatHeadToHeadScore(code1, wins1, total, ties, code2, style1 = '', style2 = '') {
+    const tieCount = ties || 0;
+    const wins2 = Math.max(0, (total || 0) - (wins1 || 0) - tieCount);
+    const tieText = tieCount ? ` <span style="color:#666;">(${tieCount} tie${tieCount > 1 ? 's' : ''})</span>` : '';
+    return `<span style="${style1}">${F1Utils.escapeHtml(code1)}</span> ${wins1 || 0} - ${wins2} <span style="${style2}">${F1Utils.escapeHtml(code2)}</span>${tieText}`;
+}
+
+function formatGridScore(data, style1 = '', style2 = '') {
+    const wins1 = data.gridWins1 || 0;
+    const ties = data.gridTies || 0;
+    const wins2 = Math.max(0, (data.gridMeetings || 0) - wins1 - ties);
+    return formatHeadToHeadScore(data.driver1Code, wins1, data.gridMeetings || 0, ties, data.driver2Code, style1, style2);
+}
 
 // 获取车手缩写
 async function getDriverCode(driverId, year) {
@@ -433,6 +447,7 @@ async function processDriverPairData(year, actualConstructorId, normalizedName, 
     // 为历史图表收集逐场百分比差距数据与明细
     const perRaceDeltas = [];
     let driver1Wins = 0;
+    let driver1Ties = 0;
     let totalRaces = 0;
 
     const driver1 = driverPair.driver1;
@@ -450,6 +465,7 @@ async function processDriverPairData(year, actualConstructorId, normalizedName, 
     // 预取该队当季每站正赛结果，用于“实际发车位（grid）”比较
     // grid=0（维修通道发车）视为劣于任何正数发车位
     let gridWins1 = 0;
+    let gridTies = 0;
     let gridMeetings = 0;
     let gridByRound = {};
     try {
@@ -489,13 +505,14 @@ async function processDriverPairData(year, actualConstructorId, normalizedName, 
         const comparison = F1Utils.compareQualifyingTimes(d1Times, d2Times);
 
         if (comparison.sessionUsed && comparison.d1Time && comparison.d2Time) {
-            totalRaces++;
-
             const d1TimeMs = F1Utils.convertTimeString(comparison.d1Time);
             const d2TimeMs = F1Utils.convertTimeString(comparison.d2Time);
+            if (!Number.isFinite(d1TimeMs) || !Number.isFinite(d2TimeMs)) return;
             const timeDiff = d2TimeMs - d1TimeMs;  // 正值意味着driver1更快
-            const percentageDiff = (timeDiff / d1TimeMs) * 100;
+            const percentageDiff = F1Utils.calculateSignedPercentageDelta(timeDiff, d1TimeMs, d2TimeMs);
+            if (!Number.isFinite(percentageDiff)) return;
 
+            totalRaces++;
             timeGaps.push(percentageDiff);
 
             // 记录到逐场数组，供历史图表使用
@@ -531,10 +548,12 @@ async function processDriverPairData(year, actualConstructorId, normalizedName, 
             // 如果driver1更快
             if (timeDiff > 0) {
                 driver1Wins++;
+            } else if (timeDiff === 0) {
+                driver1Ties++;
             }
         }
 
-        // 使用实际发车位（grid）进行“排位赛成绩（true）”统计
+        // 使用实际发车位（grid）统计，不等同于排位计时本身。
         try {
             const grids = gridByRound[race.round];
             if (grids && grids[driver1.id] != null && grids[driver2.id] != null) {
@@ -542,6 +561,7 @@ async function processDriverPairData(year, actualConstructorId, normalizedName, 
                 const g1 = grids[driver1.id];
                 const g2 = grids[driver2.id];
                 if (g1 < g2) gridWins1++;
+                else if (g1 === g2) gridTies++;
             }
         } catch (e) {
             // 忽略grid统计错误，不影响其他指标
@@ -789,7 +809,7 @@ async function processDriverPairData(year, actualConstructorId, normalizedName, 
     // 计算积分占比
     const totalTeamPoints = driver1Points + driver2Points;
     const driver1Percentage = totalTeamPoints > 0 ? Math.round((driver1Points / totalTeamPoints) * 100) : 0;
-    const driver2Percentage = totalTeamPoints > 0 ? Math.round((driver2Points / totalTeamPoints) * 100) : 0;
+    const driver2Percentage = totalTeamPoints > 0 ? 100 - driver1Percentage : 0;
 
     // 使用缓存数据获取实际车队名称
     let actualTeamName = normalizedName;
@@ -830,9 +850,11 @@ async function processDriverPairData(year, actualConstructorId, normalizedName, 
         driver2Code,
         medianGap,
         driver1Wins,
+        driver1Ties,
         totalRaces,
-        // 真实发车位比较（true qualifying）
+        // 发车位比较（grid/start position）
         gridWins1,
+        gridTies,
         gridMeetings,
         driver1Points,
         driver2Points,
@@ -938,8 +960,9 @@ async function showHistoryResults() {
         const rows = allPairsResults
             .filter(result => result !== null)
             .map(data => {
-                const qualiWinner = data.driver1Wins > (data.totalRaces - data.driver1Wins) ? 1 : 
-                                  data.driver1Wins < (data.totalRaces - data.driver1Wins) ? 2 : 0;
+                const driver2Wins = Math.max(0, (data.totalRaces || 0) - (data.driver1Wins || 0) - (data.driver1Ties || 0));
+                const qualiWinner = data.driver1Wins > driver2Wins ? 1 :
+                                  data.driver1Wins < driver2Wins ? 2 : 0;
                 const driver1QualiStyle = qualiWinner === 1 ? 'color: #3CB371; font-weight: bold;' : 
                                        qualiWinner === 2 ? 'color: #FF6B6B; font-weight: bold;' : 'font-weight: bold;';
                 const driver2QualiStyle = qualiWinner === 2 ? 'color: #3CB371; font-weight: bold;' : 
@@ -956,7 +979,7 @@ async function showHistoryResults() {
                                           standingWinner === 2 ? 'color: #FF6B6B; font-weight: bold;' : 'font-weight: bold;';
                 const driver2StandingStyle = standingWinner === 2 ? 'color: #3CB371; font-weight: bold;' : 
                                           standingWinner === 1 ? 'color: #FF6B6B; font-weight: bold;' : 'font-weight: bold;';
-                return `<tr><td>${data.year}</td><td>${data.teamNameDisplay}</td><td>${data.driver1 || "N/A"}</td><td>${data.driver2 || "N/A"}</td><td>${data.medianGap.toFixed(3)}%</td><td><span style="${driver1QualiStyle}">${data.driver1Code}</span> ${data.driver1Wins} - ${data.totalRaces - data.driver1Wins} <span style="${driver2QualiStyle}">${data.driver2Code}</span></td><td><span style="${driver1PointsStyle}">${data.driver1Code}</span> ${data.driver1Points} - ${data.driver2Points} <span style="${driver2PointsStyle}">${data.driver2Code}</span></td><td><span style="font-weight:bold;">${data.driver1Code}</span> ${data.seasonPoints1} - ${data.seasonPoints2} <span style="font-weight:bold;">${data.driver2Code}</span></td><td><span style="${driver1StandingStyle}">${data.driver1Code}</span> ${data.driver1Standing} - ${data.driver2Standing} <span style="${driver2StandingStyle}">${data.driver2Code}</span></td><td>${data.driver1Percentage}% - ${data.driver2Percentage}%</td></tr>`;
+                return `<tr><td>${data.year}</td><td>${data.teamNameDisplay}</td><td>${data.driver1 || "N/A"}</td><td>${data.driver2 || "N/A"}</td><td>${data.medianGap.toFixed(3)}%</td><td>${formatHeadToHeadScore(data.driver1Code, data.driver1Wins, data.totalRaces, data.driver1Ties, data.driver2Code, driver1QualiStyle, driver2QualiStyle)}</td><td><span style="${driver1PointsStyle}">${data.driver1Code}</span> ${data.driver1Points} - ${data.driver2Points} <span style="${driver2PointsStyle}">${data.driver2Code}</span></td><td><span style="font-weight:bold;">${data.driver1Code}</span> ${data.seasonPoints1} - ${data.seasonPoints2} <span style="font-weight:bold;">${data.driver2Code}</span></td><td><span style="${driver1StandingStyle}">${data.driver1Code}</span> ${data.driver1Standing} - ${data.driver2Standing} <span style="${driver2StandingStyle}">${data.driver2Code}</span></td><td>${data.driver1Percentage}% - ${data.driver2Percentage}%</td></tr>`;
             });
         const header = `
             ${teamDiscontinuityWarning}
@@ -973,7 +996,7 @@ async function showHistoryResults() {
                     <th>车手 1</th>
                     <th>车手 2</th>
                     <th>中位数差距 %</th>
-                    <th>排位赛成绩</th>
+                    <th>排位赛成绩 (pure pace)</th>
                     <th>共同参赛积分 (GP+Sprint)</th>
                     <th>赛季总积分 (WDC)</th>
                     <th>车手排名</th>
@@ -1094,8 +1117,9 @@ async function showHistoryResults() {
         .filter(result => result !== null)
         .map(data => {
             // 确定排位赛领先方的样式
-            const qualiWinner = data.driver1Wins > (data.totalRaces - data.driver1Wins) ? 1 : 
-                              data.driver1Wins < (data.totalRaces - data.driver1Wins) ? 2 : 0;
+            const driver2Wins = Math.max(0, (data.totalRaces || 0) - (data.driver1Wins || 0) - (data.driver1Ties || 0));
+            const qualiWinner = data.driver1Wins > driver2Wins ? 1 :
+                              data.driver1Wins < driver2Wins ? 2 : 0;
             
             const driver1QualiStyle = qualiWinner === 1 ? 'color: #3CB371; font-weight: bold;' : 
                                    qualiWinner === 2 ? 'color: #FF6B6B; font-weight: bold;' : 'font-weight: bold;';
@@ -1123,7 +1147,7 @@ async function showHistoryResults() {
             const driver2StandingStyle = standingWinner === 2 ? 'color: #3CB371; font-weight: bold;' : 
                                       standingWinner === 1 ? 'color: #FF6B6B; font-weight: bold;' : 'font-weight: bold;';
                                       
-            return `<tr><td>${data.year}</td><td>${data.teamNameDisplay}</td><td>${data.driver1 || "N/A"}</td><td>${data.driver2 || "N/A"}</td><td>${data.medianGap.toFixed(3)}%</td><td><span style="${driver1QualiStyle}">${data.driver1Code}</span> ${data.driver1Wins} - ${data.totalRaces - data.driver1Wins} <span style="${driver2QualiStyle}">${data.driver2Code}</span></td><td><span style="${driver1PointsStyle}">${data.driver1Code}</span> ${data.driver1Points} - ${data.driver2Points} <span style="${driver2PointsStyle}">${data.driver2Code}</span></td><td><span style="font-weight:bold;">${data.driver1Code}</span> ${data.seasonPoints1} - ${data.seasonPoints2} <span style="font-weight:bold;">${data.driver2Code}</span></td><td><span style="${driver1StandingStyle}">${data.driver1Code}</span> ${data.driver1Standing} - ${data.driver2Standing} <span style="${driver2StandingStyle}">${data.driver2Code}</span></td><td>${data.driver1Percentage}% - ${data.driver2Percentage}%</td></tr>`;
+            return `<tr><td>${data.year}</td><td>${data.teamNameDisplay}</td><td>${data.driver1 || "N/A"}</td><td>${data.driver2 || "N/A"}</td><td>${data.medianGap.toFixed(3)}%</td><td>${formatHeadToHeadScore(data.driver1Code, data.driver1Wins, data.totalRaces, data.driver1Ties, data.driver2Code, driver1QualiStyle, driver2QualiStyle)}</td><td><span style="${driver1PointsStyle}">${data.driver1Code}</span> ${data.driver1Points} - ${data.driver2Points} <span style="${driver2PointsStyle}">${data.driver2Code}</span></td><td><span style="font-weight:bold;">${data.driver1Code}</span> ${data.seasonPoints1} - ${data.seasonPoints2} <span style="font-weight:bold;">${data.driver2Code}</span></td><td><span style="${driver1StandingStyle}">${data.driver1Code}</span> ${data.driver1Standing} - ${data.driver2Standing} <span style="${driver2StandingStyle}">${data.driver2Code}</span></td><td>${data.driver1Percentage}% - ${data.driver2Percentage}%</td></tr>`;
         });
 
     // 当同一年存在多个队友组合行时，如两行积分相加仍小于当年WDC冠军积分，则输出被排除轮次说明
@@ -1420,7 +1444,7 @@ async function showHistoryResults() {
                     <th>车手 1</th>
                     <th>车手 2</th>
                     <th>中位数差距 %</th>
-                    <th>排位赛成绩</th>
+                    <th>排位赛成绩 (pure pace)</th>
                     <th>共同参赛积分 (GP+Sprint)</th>
                     <th>赛季总积分 (WDC)</th>
                     <th>车手排名</th>
@@ -1757,7 +1781,7 @@ async function fillSingleYearSelector() {
         const years = await F1Utils.getSeasons();
         const select = document.getElementById('yearOnlyList');
         if (!years || !select) return;
-        const list = years.MRData.SeasonTable.Seasons.reverse().map(s => s.season);
+        const list = years.MRData.SeasonTable.Seasons.slice().reverse().map(s => s.season);
         select.innerHTML = list.map(y => `<option value="${y}">${y}</option>`).join('');
         // 默认选择 2025（如果存在），否则选最新年
         if (list.includes('2025')) {
@@ -1813,7 +1837,7 @@ async function showYearResults() {
 
         // 默认不排序，展示原始顺序；提供点击表头排序
         const bodyRowsHtml = rows.map(data => {
-            const gridWins2 = Math.max(0, (data.gridMeetings || 0) - (data.gridWins1 || 0));
+            const gridWins2 = Math.max(0, (data.gridMeetings || 0) - (data.gridWins1 || 0) - (data.gridTies || 0));
             const gridWinner = (data.gridWins1 || 0) > gridWins2 ? 1 : ((data.gridWins1 || 0) < gridWins2 ? 2 : 0);
             const driver1QualiStyle = gridWinner === 1 ? 'color: #3CB371; font-weight: bold;' : 
                                     gridWinner === 2 ? 'color: #FF6B6B; font-weight: bold;' : 'font-weight: bold;';
@@ -1844,7 +1868,7 @@ async function showYearResults() {
                 <td>${data.driver1 || 'N/A'}</td>
                 <td>${data.driver2 || 'N/A'}</td>
                 <td data-num="${Math.abs(data.medianGap)}">${data.medianGap.toFixed(3)}%</td>
-                <td data-num="${gridDiff}"><span style="${driver1QualiStyle}">${data.driver1Code}</span> ${data.gridWins1 || 0} - ${gridWins2} <span style="${driver2QualiStyle}">${data.driver2Code}</span></td>
+                <td data-num="${gridDiff}">${formatGridScore(data, driver1QualiStyle, driver2QualiStyle)}</td>
                 <td data-num="${pairPtsDiff}"><span style="${driver1PointsStyle}">${data.driver1Code}</span> ${data.driver1Points} - ${data.driver2Points} <span style="${driver2PointsStyle}">${data.driver2Code}</span></td>
                 <td data-num="${seasonPtsDiff}"><span style="font-weight:bold;">${data.driver1Code}</span> ${data.seasonPoints1} - ${data.seasonPoints2} <span style="font-weight:bold;">${data.driver2Code}</span></td>
                 <td data-num="${standingDiff}"><span style="${driver1StandingStyle}">${data.driver1Code}</span> ${data.driver1Standing} - ${data.driver2Standing} <span style="${driver2StandingStyle}">${data.driver2Code}</span></td>
@@ -1862,7 +1886,7 @@ async function showYearResults() {
                             <th data-key="d1" data-type="str">车手 1</th>
                             <th data-key="d2" data-type="str">车手 2</th>
                             <th data-key="median" data-type="num">中位数差距 %</th>
-                            <th>排位赛成绩</th>
+                            <th>发车位成绩 (grid)</th>
                             <th data-key="pairPts" data-type="num">共同参赛积分 (GP+Sprint)</th>
                             <th data-key="seasonPts" data-type="num">赛季总积分 (WDC)</th>
                             <th data-key="standing" data-type="num">车手排名</th>

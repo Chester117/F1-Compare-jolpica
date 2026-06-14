@@ -4,9 +4,7 @@
   let hasRaceResults = false;
   let isUpdatingRace = false;
   let isDirtyRace = false;
-  const lapCache = new Map(); // key: `${year}-${round}-${driverId}` -> {laps: Map(lapNumber->ms), pits: Set(lap numbers), outLaps: Set(lap numbers)}
-  // Round-level aggregate cache to minimize API calls
-  const roundAggCache = new Map(); // key: `${year}-${round}` -> { lapsByDriver: Map, pitsByDriver: Map, outLapsByDriver: Map, pitLoaded: boolean }
+  const lapCache = new Map(); // key: `${year}-${round}-${driverId}` -> {lapsMap, pits, outLaps, pitLoaded}
 
   // 点云图：本次渲染创建的 Highcharts 实例，重渲染前统一销毁，避免泄漏
   const raceChartInstances = [];
@@ -213,16 +211,14 @@
 
   // 暴露比赛页缓存的汇总与清空函数，便于统一清理
   window.getRaceCacheSummary = function() {
-    const summary = { lapCacheEntries: lapCache.size, roundAggEntries: roundAggCache.size };
+    const summary = { lapCacheEntries: lapCache.size };
     console.log('[Race Cache] Summary', summary);
     return summary;
   };
   window.clearRaceCaches = function() {
     const beforeLap = lapCache.size;
-    const beforeRound = roundAggCache.size;
     lapCache.clear();
-    roundAggCache.clear();
-    const res = { removedLapEntries: beforeLap, removedRoundEntries: beforeRound, remainingLapEntries: lapCache.size, remainingRoundEntries: roundAggCache.size };
+    const res = { removedLapEntries: beforeLap, remainingLapEntries: lapCache.size };
     console.log('[Race Cache] Cleared', res);
     return res;
   };
@@ -261,7 +257,7 @@
 
     const seasonsResp = await F1Utils.getSeasons();
     if (!seasonsResp) return;
-    const seasons = seasonsResp.MRData.SeasonTable.Seasons.reverse();
+    const seasons = seasonsResp.MRData.SeasonTable.Seasons.slice().reverse();
     seasonSel.innerHTML = seasons.map(s => `<option value="${s.season}">${s.season}</option>`).join('');
 
     // Default year to 2025 if available, otherwise use latest
@@ -345,71 +341,40 @@
     }
   }
 
-  async function ensureRoundLaps(year, round) {
-    const k = `${year}-${round}`;
-    let agg = roundAggCache.get(k);
-    if (agg && agg.lapsByDriver) return agg;
-    if (!agg) {
-      agg = { lapsByDriver: new Map(), pitsByDriver: new Map(), outLapsByDriver: new Map(), pitLoaded: false };
-      roundAggCache.set(k, agg);
-    }
-    const lapsResp = await F1Utils.getRoundLaps(year, round);
-    const races = lapsResp?.MRData?.RaceTable?.Races || [];
-    if (races.length > 0) {
-      // Some proxies may return different casings/fields; normalize robustly
-      const lapsArr = Array.isArray(races[0].Laps) ? races[0].Laps : (Array.isArray(races[0].laps) ? races[0].laps : []);
-      for (const lap of lapsArr) {
-        const lapNum = parseInt(lap.number || lap.LapNumber || lap.lap, 10);
-        const timings = lap.Timings || lap.timing || lap.timings || [];
-        for (const t of timings) {
-          const did = t.driverId || t.Driver?.driverId || t.driver || t.DriverId || t.code || t.Code;
-          const timeStr = t.time || t.Time || t.laptime || t.lapTime;
-          if (!did || !timeStr) continue;
-          let dMap = agg.lapsByDriver.get(did);
-          if (!dMap) {
-            dMap = new Map();
-            agg.lapsByDriver.set(did, dMap);
-          }
-          if (Number.isFinite(lapNum)) dMap.set(lapNum, F1Utils.convertTimeString(timeStr));
+  async function loadDriverPitData(year, round, driverId) {
+    const pits = new Set();
+    const outLaps = new Set();
+    try {
+      const presp = await F1Utils.getDriverPitStops(year, round, driverId);
+      const stops = presp?.MRData?.RaceTable?.Races?.[0]?.PitStops || [];
+      for (const stop of stops) {
+        const ln = parseInt(stop.lap || stop.Lap || stop.lapNumber, 10);
+        if (Number.isFinite(ln)) {
+          pits.add(ln);
+          outLaps.add(ln + 1);
         }
       }
+      F1Utils.debug?.('[Race] per-driver pitstops loaded', { year, round, driverId, stops: pits.size });
+      return { pits, outLaps, loaded: true };
+    } catch (e) {
+      F1Utils.debug?.('[Race] per-driver pitstops failed; proceeding without pit filter', { year, round, driverId, error: String(e) });
+      return { pits, outLaps, loaded: false };
     }
-    // Light debug to aid diagnosis without spamming console by default
-    F1Utils.debug?.('[Race] ensureRoundLaps parsed drivers', {
-      year, round, drivers: Array.from(agg.lapsByDriver.keys()).length
-    });
-    return agg;
-  }
-
-  async function ensureRoundPits(year, round) {
-    const k = `${year}-${round}`;
-    let agg = roundAggCache.get(k);
-    if (!agg) {
-      agg = { lapsByDriver: new Map(), pitsByDriver: new Map(), outLapsByDriver: new Map(), pitLoaded: false };
-      roundAggCache.set(k, agg);
-    }
-    if (agg.pitLoaded) return agg;
-    const pitsResp = await F1Utils.getRoundPitStops(year, round);
-    const pitStops = pitsResp?.MRData?.RaceTable?.Races?.[0]?.PitStops || [];
-    for (const ps of pitStops) {
-      const did = ps.Driver?.driverId || ps.driverId || ps.driver || ps.DriverId;
-      const ln = parseInt(ps.lap || ps.Lap || ps.lapNumber, 10);
-      if (!did || Number.isNaN(ln)) continue;
-      let setIn = agg.pitsByDriver.get(did);
-      let setOut = agg.outLapsByDriver.get(did);
-      if (!setIn) { setIn = new Set(); agg.pitsByDriver.set(did, setIn); }
-      if (!setOut) { setOut = new Set(); agg.outLapsByDriver.set(did, setOut); }
-      setIn.add(ln);
-      setOut.add(ln + 1);
-    }
-    agg.pitLoaded = true;
-    return agg;
   }
 
   async function getDriverRaceData(year, round, driverId, excludePit) {
     // Cache key 不含 excludePit，缓存按需复用；pit 过滤只影响后续业务逻辑
     const key = `${year}-${round}-${driverId}`;
-    if (lapCache.has(key)) return lapCache.get(key);
+    if (lapCache.has(key)) {
+      const cached = lapCache.get(key);
+      if (excludePit && !cached.pitLoaded) {
+        const pitData = await loadDriverPitData(year, round, driverId);
+        cached.pits = pitData.pits;
+        cached.outLaps = pitData.outLaps;
+        cached.pitLoaded = pitData.loaded;
+      }
+      return cached;
+    }
 
     // 主路径：per-driver /drivers/{id}/laps.json
     // 原因：jolpica 的聚合端点 /laps.json 把每页 timing 数硬性限制在 100
@@ -436,30 +401,13 @@
       throw e; // 让上层显示"请求失败"行
     }
 
-    // pit/out 圈：同样走 per-driver 端点
-    let pits = new Set();
-    let outLaps = new Set();
+    // pit/out 圈按需加载：先看不排除 pit 的结果，之后切换时仍能补齐 pit 数据。
+    let pitData = { pits: new Set(), outLaps: new Set(), loaded: false };
     if (excludePit) {
-      try {
-        const presp = await F1Utils.getDriverPitStops(year, round, driverId);
-        const stops = presp?.MRData?.RaceTable?.Races?.[0]?.PitStops || [];
-        for (const stop of stops) {
-          const ln = parseInt(stop.lap || stop.Lap || stop.lapNumber, 10);
-          if (Number.isFinite(ln)) {
-            pits.add(ln);
-            outLaps.add(ln + 1);
-          }
-        }
-        F1Utils.debug?.('[Race] per-driver pitstops loaded', { year, round, driverId, stops: pits.size });
-      } catch (e) {
-        // pit 数据失败不阻断主流程
-        F1Utils.debug?.('[Race] per-driver pitstops failed; proceeding without pit filter', { year, round, driverId, error: String(e) });
-        pits = new Set();
-        outLaps = new Set();
-      }
+      pitData = await loadDriverPitData(year, round, driverId);
     }
 
-    const obj = { lapsMap: dMap, pits, outLaps };
+    const obj = { lapsMap: dMap, pits: pitData.pits, outLaps: pitData.outLaps, pitLoaded: pitData.loaded };
     lapCache.set(key, obj);
     return obj;
   }
@@ -472,7 +420,7 @@
       { text: 'Race', width: '220px' },
       { text: `${driver1Name} Median`, width: '140px' },
       { text: `${driver2Name} Median`, width: '140px' },
-      { text: 'Time Delta', width: '120px' },
+      { text: 'Median Lap Delta', width: '140px' },
       { text: 'Delta %', width: '90px' },
       { text: 'Laps Used', width: '90px' }
     ];
@@ -727,7 +675,7 @@
         const medD1 = F1Utils.calculateMedian(d1Times);
         const medD2 = F1Utils.calculateMedian(d2Times);
         const medDelta = F1Utils.calculateMedian(perLapDeltas);
-        const pctDelta = (medDelta / medD1) * 100;
+        const pctDelta = F1Utils.calculateSignedPercentageDelta(medDelta, medD1, medD2);
 
         // Console transparency: log detailed data used for this race
         try {
@@ -773,8 +721,12 @@
 
         const tdPct = document.createElement('td');
         tdPct.style.textAlign = 'center';
-        const sign = pctDelta > 0 ? '+' : (pctDelta < 0 ? '-' : '');
-        tdPct.textContent = `${sign}${Math.abs(pctDelta).toFixed(3)}%`;
+        if (Number.isFinite(pctDelta)) {
+          const sign = pctDelta > 0 ? '+' : (pctDelta < 0 ? '-' : '');
+          tdPct.textContent = `${sign}${Math.abs(pctDelta).toFixed(3)}%`;
+        } else {
+          tdPct.textContent = 'N/A';
+        }
         tr.appendChild(tdPct);
 
         const tdCount = document.createElement('td');

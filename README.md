@@ -1,71 +1,75 @@
-## F1  Qualifying Comparison
-This website will let you compare the qualifying times of different teammates. This includes there best time for each race, the average difference between drivers and the overall qualifying score.
-## F1 Qualifying Comparison
-This website will let you compare the qualifying times of different teammates. This includes their best time for each race, the average difference between drivers and the overall qualifying score.
+# F1 Qualifying Comparison
 
-You can visit the website here:
+Compare Formula 1 teammates across qualifying pace, official qualifying position, race pace, points, standings, and multi-year history.
+
+Website:
 https://chester117.github.io/F1-Compare-jolpica/
 
-### API Rate Limiting
-All data is sourced from https://api.jolpi.ca/ergast/f1/ which enforces rate limiting. The application now includes:
-
-- Data caching to reduce redundant API requests
-- Request throttling to avoid hitting rate limits
-- Automatic retry logic for failed requests
-- Batch processing of historical data
-- Aggregated fetching in Race tab to minimize requests per round
-
-### History tab: partial data and retry
-- When the upstream API responds with 429 (Too Many Requests), network/CORS errors, or partial sprint listings, the app will:
-  - Continue with available data to render a partial table.
-  - Display a yellow banner "数据不完整" with a "继续获取" button (also mirrored in a floating bottom-right banner).
-  - On click, only the failed URLs are retried via a request queue with adaptive backoff (Retry-After aware). The table refreshes automatically after retry.
-- Tips:
-  - Prefer a smaller year span (1–3 years) to reduce calls.
-  - Sprint data is fetched once per season. If the season sprint list fails to load, the app will skip per-round sprint fallbacks to avoid request storms that trigger 429.
-  - You can call `F1Utils.retryFailedRequests()` from the console to manually retry failed items.
-
-When using the history teammate comparison feature, it's recommended to select a smaller date range (1-3 years) to minimize API requests and improve performance.
-
-### Race tab performance and 429 mitigation
-- We now use aggregated endpoints to fetch an entire round’s data in one call:
-  - Laps (all drivers, single request): `/f1/{year}/{round}/laps.json?limit=2000`
-  - Pit stops (all drivers, single request): `/f1/{year}/{round}/pitstops.json?limit=2000` (requested only when the “排除进站圈/出站圈” filter is enabled)
-- This reduces calls from 4 per round (per-driver laps + pits) to at most 2 per round, greatly lowering the chance of 429.
-- A request queue (500 ms spacing) and 429 backoff are in place; on 429 the UI now skips the affected round gracefully instead of crashing.
-- Tips to avoid 429 further:
-  - Use a smaller start/end round window.
-  - Temporarily uncheck the pit in/out filter to skip pit-stop requests.
-  - Use the “清空缓存” button if the upstream data has changed or you want to retry after rate limiting.
-
-### Caching and flushing
-- What is cached?
-  - Low-level fetch responses (keyed by full URL).
-  - History tab helper data (driver codes, driver standings by year, resolved team display names).
-  - Race tab per‑driver derived data and per‑round aggregated data (laps/pits for all drivers).
-
-- How long is it valid?
-  - Caches are in-memory and only persist for the current page session. They are considered valid until you reload the page or manually clear them. If the upstream API updates (e.g., ongoing season results), you may clear caches to force a fresh fetch.
-
-- How to flush?
-  - UI: Click the “清空缓存” button under the top tabs. You’ll see a brief “已清空” confirmation.
-  - Console:
-    - Flush everything: `F1Utils.flushAllCaches()`
-    - Fetch cache only: `F1Utils.flushFetchCache()`
-    - History caches only: `window.clearHistoryCaches()`
-    - Race caches only: `window.clearRaceCaches()`
-    - See cache sizes: `F1Utils.getCacheSummary()`
-
-### Features
-- Compare qualifying performance between teammates
-- View historical head-to-head statistics
-- Analyze qualifying trends over time
-- Explore points, race results, and driver standings
-- Year comparison tab: pick a single season to see all teams’ teammate pair summary in a sortable table (e.g., sort by median quali gap %, points share, etc.)
- - History tab chart: under the teammate history table, a full-featured multi-year delta% trend graph is rendered, reusing the same chart system as the Qualifying tab (filters, trend lines, export, separate trend view). All qualifying sessions where both drivers set comparable times across the selected years are combined into one sequence.
-You can visit the website here:
-https://chester117.github.io/F1-Compare-jolpica/
-
-
-All data is sourced from:
+Data source:
 https://api.jolpi.ca/ergast/f1/
+
+## Features
+
+- Compare qualifying performance between teammates.
+- Track pure pace and official qualifying position head-to-head scores, including ties.
+- View historical teammate statistics across one or more seasons.
+- Analyze qualifying trends with filtering, trend lines, and chart export.
+- Compare race median lap pace with optional pit in/out lap filtering.
+- Explore points, race results, driver standings, and a single-year all-team comparison table.
+
+## API Rate Limiting
+
+Jolpica enforces rate limits. The app mitigates that with:
+
+- Request throttling through a shared queue.
+- Retry/backoff handling for 429 responses, including `Retry-After` when available.
+- In-flight request de-duplication so identical concurrent requests share one fetch.
+- In-memory fetch caching with a 30-minute TTL.
+- Persistent `localStorage` fetch caching for cacheable responses under a size cap.
+- Batch-style history processing and resume controls for partial results.
+
+## History Tab: Partial Data and Retry
+
+When the upstream API responds with 429, network/CORS errors, or partial sprint listings, the app will:
+
+- Continue with available data to render a partial table.
+- Display a yellow "数据不完整" banner with a "继续获取" button.
+- Retry only failed URLs through the request queue when the user continues.
+
+Tips:
+
+- Prefer a smaller year span, such as 1-3 years, when exploring large history ranges.
+- Sprint data is fetched once per season. If the season sprint list fails, the app skips per-round sprint fallbacks to avoid request storms.
+- You can call `F1Utils.retryFailedRequests()` from the browser console to manually retry failed items.
+
+## Race Tab Performance
+
+The race comparison tab intentionally uses per-driver endpoints:
+
+- Laps: `/f1/{year}/{round}/drivers/{driverId}/laps.json?limit=100`
+- Pit stops: `/f1/{year}/{round}/drivers/{driverId}/pitstops.json?limit=100`
+
+Jolpica's round-level laps endpoint can truncate timing data because one race contains many more timing entries than a single page can reliably return. Per-driver lap requests fit a full race within the API limit and avoid missing most of the field after the first few laps.
+
+Pit stop data is loaded only when the "排除进站圈/出站圈" filter is enabled. If lap data was already cached without pit data, the cache is upgraded on demand when pit filtering is later enabled.
+
+## Caching and Flushing
+
+Cached data includes:
+
+- Low-level fetch responses keyed by full URL.
+- Persistent low-level fetch responses in `localStorage` for responses below the size cap.
+- History helper data, including driver codes, standings by year, and resolved team display names.
+- Race tab derived data, including per-driver laps and optional pit/out lap sets.
+
+Default fetch cache TTL is 30 minutes. Memory cache is page-session scoped; persistent fetch cache survives reloads until TTL expiry or manual clearing.
+
+Flush options:
+
+- UI: click the "清空缓存" button under the top tabs.
+- Console:
+  - `F1Utils.flushAllCaches()`
+  - `F1Utils.flushFetchCache()`
+  - `window.clearHistoryCaches()`
+  - `window.clearRaceCaches()`
+  - `F1Utils.getCacheSummary()`
