@@ -57,8 +57,8 @@
     window.__waitHighchartsReady(() => {
       const { d1Data, d2Data, usedSet, excludePit, threshold, d1Name, d2Name } = ctx;
       // D1/D2 颜色（与 QualifyingTrendGraph 风格一致）
-      const COLOR_D1 = '#1e90ff';
-      const COLOR_D2 = '#ff6b6b';
+      const COLOR_D1 = '#20b8ff';
+      const COLOR_D2 = '#ff4d61';
 
       // 构建散点数据
       const d1Used = [], d1Excluded = [];
@@ -176,28 +176,57 @@
 
       host.innerHTML = '';
       const chart = Highcharts.chart(host, {
-        chart: { type: 'scatter', height: 360 },
-        title: { text: `${ctx.raceName} — 圈速点云`, style: { fontSize: '14px' } },
+        chart: {
+          type: 'scatter',
+          height: 380,
+          zoomType: 'xy',
+          backgroundColor: '#0f141d',
+          plotBackgroundColor: 'rgba(255,255,255,0.025)'
+        },
+        title: { text: `${ctx.raceName} — 圈速点云`, style: { fontSize: '15px', color: '#f3f7ff', fontWeight: '800' } },
         xAxis: {
-          title: { text: '圈数' },
-          allowDecimals: false
+          title: { text: '圈数', style: { color: '#d8e2f0', fontWeight: '700' } },
+          allowDecimals: false,
+          gridLineWidth: 1,
+          gridLineColor: 'rgba(255,255,255,0.07)',
+          labels: { style: { color: '#b9c6d8' } },
+          lineColor: 'rgba(255,255,255,0.18)',
+          tickColor: 'rgba(255,255,255,0.18)'
         },
         yAxis: {
-          title: { text: '圈速' },
-          labels: { formatter: function() { return msToLabel(this.value); } }
+          title: { text: '圈速', style: { color: '#d8e2f0', fontWeight: '700' } },
+          gridLineColor: 'rgba(255,255,255,0.08)',
+          labels: {
+            formatter: function() { return msToLabel(this.value); },
+            style: { color: '#b9c6d8' }
+          }
         },
         tooltip: {
+          backgroundColor: 'rgba(8, 10, 14, 0.96)',
+          borderColor: '#ff3d4f',
+          borderRadius: 6,
+          style: { color: '#ffffff' },
           formatter: function() {
             const t = msToLabel(this.y);
             const reason = this.point?.custom?.reason;
-            const tail = reason ? `<br/><span style="color:#999;">${reason}</span>` : '';
+            const tail = reason ? `<br/><span style="color:#b9c6d8;">${reason}</span>` : '';
             return `<b>${this.series.name}</b><br/>Lap ${this.x}: ${t}${tail}`;
           }
         },
-        legend: { itemStyle: { fontSize: '12px' } },
+        legend: {
+          itemStyle: { fontSize: '12px', color: '#d8e2f0', fontWeight: '700' },
+          itemHoverStyle: { color: '#ffffff' },
+          itemHiddenStyle: { color: '#6f7a8e' }
+        },
         credits: { enabled: false },
         plotOptions: {
-          scatter: { marker: { states: { hover: { lineWidth: 1 } } } },
+          scatter: {
+            marker: {
+              lineColor: 'rgba(255,255,255,0.72)',
+              lineWidth: 0.6,
+              states: { hover: { lineWidth: 1.5, radiusPlus: 2 } }
+            }
+          },
           line: { lineWidth: 2 }
         },
         series

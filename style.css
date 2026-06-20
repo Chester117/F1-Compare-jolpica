@@ -990,8 +990,10 @@ tr:nth-child(even) td {
 .excluded-points {
     border: 1px solid var(--line);
     border-radius: 8px;
-    background: rgba(255,255,255,0.95);
-    color: var(--ink);
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035)),
+        #0f141d;
+    color: #d8e2f0;
     box-shadow: 0 16px 44px rgba(0,0,0,0.24);
 }
 
@@ -1045,19 +1047,23 @@ tr:nth-child(even) td {
 }
 
 .race-scatter-row td {
-    background: #eceff4 !important;
+    background: rgba(8, 10, 14, 0.78) !important;
+    color: #d8e2f0 !important;
+    border-top: 1px dashed rgba(255,255,255,0.16);
 }
 
 .race-scatter-toggle {
     min-height: 34px;
     color: #fff;
-    background: #111217;
-    border-color: #111217;
+    background: rgba(255,255,255,0.09);
+    border-color: rgba(255,255,255,0.22);
 }
 
 .race-scatter-host {
     padding: 10px;
-    background: #f8fafc;
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.065), rgba(255,255,255,0.025)),
+        #0f141d;
 }
 
 .comparison-table {
@@ -1471,6 +1477,115 @@ tr:nth-child(even) td {
     border: 1px solid var(--line);
     border-radius: 8px;
     background: rgba(255,255,255,0.045);
+}
+
+/* Final dark-theme hardening for dynamically generated legacy blocks. */
+.warning-message,
+#pointsExplainWrapper,
+#pointsExplainContent,
+#singlePairSummary,
+#historyTable > .loading-text {
+    color: #d8e2f0 !important;
+}
+
+.warning-message {
+    border: 1px solid rgba(255, 194, 71, 0.34) !important;
+    border-radius: 8px !important;
+    background:
+        linear-gradient(135deg, rgba(255, 194, 71, 0.13), rgba(255, 255, 255, 0.045)),
+        #111721 !important;
+    box-shadow: 0 12px 34px rgba(0,0,0,0.28);
+}
+
+#historyTable > .loading-text {
+    border: 1px solid rgba(255,255,255,0.16) !important;
+    background:
+        linear-gradient(135deg, rgba(32, 184, 255, 0.12), rgba(255,255,255,0.045)),
+        #111721 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 12px 34px rgba(0,0,0,0.24);
+}
+
+.warning-message strong,
+.warning-message span,
+.warning-message li,
+.warning-message div {
+    color: inherit !important;
+}
+
+.warning-message table,
+.warning-message tr,
+.warning-message th,
+.warning-message td,
+#detailPointsTable,
+#detailPointsTable tr,
+#detailPointsTable th,
+#detailPointsTable td {
+    background: #111721 !important;
+    color: #d8e2f0 !important;
+    border-color: rgba(255,255,255,0.12) !important;
+}
+
+.warning-message th,
+#detailPointsTable th {
+    background: #182132 !important;
+    color: #f3f7ff !important;
+}
+
+#historyGraphDetails,
+#historyGraphDetails div,
+#historyGraphDetails span,
+#historyGraphDetails strong,
+#historyGraphDetails label {
+    color: #d8e2f0 !important;
+}
+
+#detailPointsTable tbody tr:nth-child(even) td {
+    background: #151e2d !important;
+}
+
+#detailPointsTable td:nth-child(7),
+#detailPointsTable td:nth-child(8) {
+    color: #f3f7ff !important;
+}
+
+#detailPointsTable td:nth-child(7) strong,
+#detailPointsTable td:nth-child(8) strong,
+#detailPointsTable strong {
+    color: inherit !important;
+}
+
+#detailPointsTable td:nth-child(10) {
+    background: rgba(255, 194, 71, 0.16) !important;
+    color: #ffe2a3 !important;
+}
+
+.threshold-badge {
+    color: #ffc247 !important;
+}
+
+.help-hint {
+    color: #b9c6d8 !important;
+    text-decoration-color: rgba(255,255,255,0.42);
+}
+
+select.selector:focus,
+button.selector:focus-visible,
+.chart-control-button:focus-visible,
+.chart-control-select:focus {
+    outline: 2px solid rgba(32, 184, 255, 0.72);
+    outline-offset: 2px;
+}
+
+button.selector:disabled,
+.chart-control-button:disabled {
+    cursor: wait;
+    opacity: 0.78;
+}
+
+.highcharts-container,
+.highcharts-root {
+    border-radius: 8px;
 }
 
 @media screen and (max-width: 980px) {

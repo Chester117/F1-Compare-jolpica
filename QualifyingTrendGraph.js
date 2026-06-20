@@ -6,9 +6,11 @@ if (typeof window !== 'undefined' && typeof window.__waitHighchartsReady !== 'fu
         if (window.__F1HighchartsThemeApplied || typeof Highcharts === 'undefined') return;
         window.__F1HighchartsThemeApplied = true;
         Highcharts.setOptions({
-            colors: ['#ff273a', '#00d294', '#00a5ef', '#f99c00', '#ffffff', '#9f9fa9'],
+            colors: ['#ff3d4f', '#00d294', '#20b8ff', '#ffc247', '#9da7ff', '#ff8a3d'],
             chart: {
-                backgroundColor: '#f8fafc',
+                backgroundColor: '#0f141d',
+                plotBackgroundColor: 'rgba(255,255,255,0.025)',
+                plotBorderColor: 'rgba(255,255,255,0.1)',
                 borderRadius: 8,
                 style: {
                     fontFamily: 'Noto Sans SC, Source Han Sans SC, Microsoft YaHei, Segoe UI, sans-serif'
@@ -16,36 +18,37 @@ if (typeof window !== 'undefined' && typeof window.__waitHighchartsReady !== 'fu
             },
             title: {
                 style: {
-                    color: '#15161a',
+                    color: '#f3f7ff',
                     fontWeight: '800'
                 }
             },
             subtitle: {
                 style: {
-                    color: '#6f737d'
+                    color: '#98a4b7'
                 }
             },
             xAxis: {
-                gridLineColor: '#e3e7ee',
-                lineColor: '#cfd5df',
-                tickColor: '#cfd5df',
-                labels: { style: { color: '#4a4e57' } },
-                title: { style: { color: '#4a4e57', fontWeight: '700' } }
+                gridLineColor: 'rgba(255,255,255,0.07)',
+                lineColor: 'rgba(255,255,255,0.18)',
+                tickColor: 'rgba(255,255,255,0.18)',
+                labels: { style: { color: '#b9c6d8' } },
+                title: { style: { color: '#d8e2f0', fontWeight: '700' } }
             },
             yAxis: {
-                gridLineColor: '#e3e7ee',
-                lineColor: '#cfd5df',
-                tickColor: '#cfd5df',
-                labels: { style: { color: '#4a4e57' } },
-                title: { style: { color: '#4a4e57', fontWeight: '700' } }
+                gridLineColor: 'rgba(255,255,255,0.08)',
+                lineColor: 'rgba(255,255,255,0.18)',
+                tickColor: 'rgba(255,255,255,0.18)',
+                labels: { style: { color: '#b9c6d8' } },
+                title: { style: { color: '#d8e2f0', fontWeight: '700' } }
             },
             legend: {
-                itemStyle: { color: '#15161a', fontWeight: '700' },
-                itemHoverStyle: { color: '#ff273a' }
+                itemStyle: { color: '#d8e2f0', fontWeight: '700' },
+                itemHoverStyle: { color: '#ffffff' },
+                itemHiddenStyle: { color: '#6f7a8e' }
             },
             tooltip: {
-                backgroundColor: 'rgba(17, 18, 23, 0.94)',
-                borderColor: '#ff273a',
+                backgroundColor: 'rgba(8, 10, 14, 0.96)',
+                borderColor: '#ff3d4f',
                 borderRadius: 6,
                 style: { color: '#ffffff' }
             },
@@ -169,8 +172,8 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
                 max: yMax,
                 labels: { format: '{value:.1f}%', style: { fontSize: '12px' } },
                 plotLines: [{
-                    color: '#ff3333',
-                    width: 1,
+                    color: '#ff3d4f',
+                    width: 2,
                     value: 0,
                     zIndex: 2
                 }],
@@ -183,7 +186,7 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
                             text: `${state.driver1LastName} is Faster`,
                             align: 'left',
                             x: 10,
-                            style: { color: '#666666', fontSize: '12px' }
+                            style: { color: '#9fb0c6', fontSize: '12px', fontWeight: '700' }
                         }
                     },
                     {
@@ -194,7 +197,7 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
                             text: `${state.driver2LastName} is Faster`,
                             align: 'left',
                             x: 10,
-                            style: { color: '#666666', fontSize: '12px' }
+                            style: { color: '#9fb0c6', fontSize: '12px', fontWeight: '700' }
                         }
                     }
                 ]
@@ -220,7 +223,7 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
                 ...(state.showDataPointsInTrend ? [{
                     name: 'Data Points',
                     data: data,
-                    color: 'rgba(0, 0, 139, 0.15)',
+                    color: 'rgba(32, 184, 255, 0.28)',
                     marker: { enabled: true, radius: 3 },
                     lineWidth: 1,
                     connectNulls: false,
@@ -237,8 +240,8 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
             {
                 name: 'Qualifying Gap',
                 data: data,
-                color: '#00008B',
-                marker: { enabled: true, radius: 4 },
+                color: '#ff3d4f',
+                marker: { enabled: true, radius: 4.5, lineWidth: 1, lineColor: '#fff5f6' },
                 connectNulls: false
             },
             ...(state.showTrendInMain ? trends : [])
@@ -255,7 +258,7 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
         const totalPoints = data.length;
         const pointsPerSegment = Math.ceil(totalPoints / state.currentSegments);
         
-        const colors = ['#3cb371', '#1e90ff', '#ff6b6b', '#ffd700', '#8a2be2', '#ff8c00', '#00bcd4', '#2f4f4f'];
+        const colors = ['#00d294', '#20b8ff', '#ffc247', '#9da7ff', '#ff8a3d', '#ff6fb0', '#70e0ff', '#b9c6d8'];
         const segments = [];
 
         for (let i = 0; i < state.currentSegments; i++) {
@@ -577,13 +580,20 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
                 flex-wrap: wrap;
                 justify-content: center;
                 align-items: center;
-                gap: 20px;
-                margin: 20px 0;
+                gap: 10px;
+                margin: 14px 0 18px;
+                padding: 10px;
+                border: 1px solid rgba(255,255,255,0.14);
+                border-radius: 8px;
+                background: rgba(0,0,0,0.22);
             }
             .control-group {
                 display: flex;
                 align-items: center;
                 gap: 8px;
+                color: #aeb8c7;
+                font-size: 13px;
+                font-weight: 800;
             }
             .button-group {
                 display: flex;
@@ -591,32 +601,42 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
             }
             .chart-control-button {
                 padding: 8px 16px;
-                background-color: #4a4a4a;
-                color: white;
-                border: none;
-                border-radius: 4px;
+                min-height: 40px;
+                background: rgba(255,255,255,0.09);
+                color: #fff;
+                border: 1px solid rgba(255,255,255,0.24);
+                border-radius: 6px;
                 cursor: pointer;
-                transition: background-color 0.3s;
+                font-weight: 700;
+                transition: background 0.18s ease, border-color 0.18s ease;
             }
             .chart-control-button:hover {
-                background-color: #666;
+                background: rgba(255,255,255,0.15);
+                border-color: rgba(255,255,255,0.42);
             }
             .chart-control-button.active-button {
-                background-color: #3cb371;
+                background: linear-gradient(135deg, #00d294, #00996e);
+                color: #04110d;
             }
             .chart-control-select {
-                background-color: white;
-                color: #333;
+                min-height: 40px;
+                background:
+                    linear-gradient(180deg, rgba(255,255,255,0.11), rgba(255,255,255,0.045)),
+                    #15161a;
+                color: #f7f7f8;
                 padding: 5px 10px;
-                border: 1px solid #ddd;
-                border-radius: 4px;
+                border: 1px solid rgba(255,255,255,0.24);
+                border-radius: 6px;
+                font-weight: 700;
             }
             .excluded-points {
                 padding: 10px;
-                background-color: #f5f5f5;
-                border-radius: 4px;
+                background: rgba(255,255,255,0.06);
+                border: 1px solid rgba(255,255,255,0.12);
+                border-radius: 8px;
                 margin-top: 10px;
                 text-align: center;
+                color: #d8e2f0;
             }
             .trend-only-graph {
                 width: 100%;
@@ -630,10 +650,14 @@ function QualifyingTrendGraph(container, data, driver1Name, driver2Name) {
             .trend-stats {
                 margin-top: 12px;
                 font-size: 13px;
-                color: #333;
+                color: #b9c6d8;
                 display: flex;
                 flex-direction: column;
                 gap: 6px;
+                padding: 10px 12px;
+                border: 1px solid rgba(255,255,255,0.12);
+                border-radius: 8px;
+                background: rgba(255,255,255,0.045);
             }
             .trend-stat-row {
                 display: flex;
