@@ -659,7 +659,9 @@
             drivers
         });
         const points = drivers.reduce((sum, driver) => sum + driver.points.filter(point => Number.isFinite(point.value)).length, 0);
-        setStatus(`完成：${raceRows.length} 场比赛，${drivers.length} 位车手，${points} 个车手走势点。`, 'ready');
+        const latestRace = raceRows[raceRows.length - 1];
+        const latestText = latestRace ? `最新纳入：${latestRace.raceName} / ${latestRace.code}。` : '';
+        setStatus(`完成：${raceRows.length} 场比赛，${drivers.length} 位车手，${points} 个车手走势点。${latestText}`, 'ready');
     }
 
     function downloadSvg() {

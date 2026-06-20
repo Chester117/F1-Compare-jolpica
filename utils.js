@@ -91,7 +91,7 @@ const cache = {
     }
 };
 
-const PERSISTENT_CACHE_PREFIX = 'f1compare:fetch:v1:';
+const PERSISTENT_CACHE_PREFIX = 'f1compare:fetch:v2:';
 const PERSISTENT_CACHE_MAX_CHARS = 750000;
 
 function persistentCacheAvailable() {
