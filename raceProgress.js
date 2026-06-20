@@ -407,10 +407,11 @@
         }
 
         const width = 1200;
-        const height = 675;
-        const margin = { top: 112, right: 190, bottom: 128, left: 92 };
+        const height = 700;
+        const margin = { top: 112, right: 190, bottom: 152, left: 92 };
         const plotW = width - margin.left - margin.right;
         const plotH = height - margin.top - margin.bottom;
+        const axisY = margin.top + plotH;
         const allValues = [
             ...payload.medianLine.map(p => p.value),
             ...payload.drivers.flatMap(driver => driver.points.map(point => point.value))
@@ -437,10 +438,12 @@
 
         const xAxis = payload.races.map((race, index) => {
             const x = xAt(index);
-            const flag = race.flag ? `<image class="rpe-flag" href="${esc(race.flag)}" x="${(x - 12).toFixed(1)}" y="${height - 78}" width="24" height="16"></image>` : '';
-            const sprint = race.isSprint ? `<text class="rpe-sprint" x="${x.toFixed(1)}" y="${height - 60}" text-anchor="middle">SPRINT</text>` : '';
+            const flagY = axisY + 48;
+            const sprintY = axisY + 77;
+            const flag = race.flag ? `<image class="rpe-flag" href="${esc(race.flag)}" x="${(x - 13).toFixed(1)}" y="${flagY.toFixed(1)}" width="26" height="17"></image>` : '';
+            const sprint = race.isSprint ? `<text class="rpe-sprint" x="${x.toFixed(1)}" y="${sprintY.toFixed(1)}" text-anchor="middle">SPRINT</text>` : '';
             return `<g>
-                <text class="rpe-race-code" x="${x.toFixed(1)}" y="${height - 94}" text-anchor="middle">${esc(race.code)}</text>
+                <text class="rpe-race-code" x="${x.toFixed(1)}" y="${(axisY + 31).toFixed(1)}" text-anchor="middle">${esc(race.code)}</text>
                 ${flag}
                 ${sprint}
             </g>`;
@@ -467,33 +470,61 @@
                 .join('');
             const visiblePoints = points.filter(Boolean);
             const last = visiblePoints[visiblePoints.length - 1];
+            const labelY = last ? Math.max(margin.top + 20, Math.min(axisY - 18, last.y)) : 0;
             const label = last ? `<g class="rpe-end-label" style="--line-color:${driver.color}">
-                    <line x1="${(last.x + 12).toFixed(1)}" y1="${last.y.toFixed(1)}" x2="${(margin.left + plotW + 48).toFixed(1)}" y2="${last.y.toFixed(1)}"></line>
-                    <circle cx="${(margin.left + plotW + 56).toFixed(1)}" cy="${last.y.toFixed(1)}" r="18"></circle>
-                    <text x="${(margin.left + plotW + 92).toFixed(1)}" y="${(last.y + 6).toFixed(1)}">${esc(driver.code)}</text>
+                    <line x1="${(last.x + 13).toFixed(1)}" y1="${last.y.toFixed(1)}" x2="${(margin.left + plotW + 42).toFixed(1)}" y2="${labelY.toFixed(1)}"></line>
+                    <circle cx="${(margin.left + plotW + 56).toFixed(1)}" cy="${labelY.toFixed(1)}" r="18"></circle>
+                    <text x="${(margin.left + plotW + 92).toFixed(1)}" y="${(labelY + 6).toFixed(1)}">${esc(driver.code)}</text>
                 </g>` : '';
             return `${paths}${dots}${label}`;
         }).join('');
 
-        const callouts = payload.drivers.flatMap(driver => {
+        const calloutCandidates = payload.drivers.flatMap((driver, driverIndex) => {
             const candidates = driver.points
-                .map((point, index) => ({ ...point, index }))
+                .map((point, index) => ({ ...point, index, driver, driverIndex }))
                 .filter(point => Number.isFinite(point.value));
             if (!candidates.length) return [];
             const byMax = candidates.slice().sort((a, b) => b.value - a.value)[0];
             const latest = candidates[candidates.length - 1];
             const chosen = byMax && latest && byMax.index !== latest.index ? [byMax, latest] : [byMax || latest];
-            return chosen.slice(0, 2).map((point, calloutIndex) => {
-                const x = xAt(point.index);
-                const y = yAt(point.value);
-                const dx = point.index > payload.races.length * 0.62 ? -104 : 14;
-                const dy = calloutIndex ? 28 : -20;
-                return `<g class="rpe-callout">
-                    <line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${(x + dx).toFixed(1)}" y2="${(y + dy).toFixed(1)}"></line>
-                    <rect x="${(x + dx - 4).toFixed(1)}" y="${(y + dy - 17).toFixed(1)}" width="96" height="24" rx="3"></rect>
-                    <text x="${(x + dx + 4).toFixed(1)}" y="${(y + dy - 1).toFixed(1)}">${esc(driver.code)} ${point.lapsUsed}/${point.totalLaps} laps</text>
-                </g>`;
-            });
+            return chosen.slice(0, 2);
+        });
+        const calloutSlots = new Map();
+        const placedCalloutBoxes = [];
+        const callouts = calloutCandidates.map(point => {
+            const x = xAt(point.index);
+            const y = yAt(point.value);
+            const rightSide = point.index > payload.races.length * 0.56;
+            const slotKey = `${point.index}-${rightSide ? 'right' : 'left'}`;
+            const slot = calloutSlots.get(slotKey) || 0;
+            calloutSlots.set(slotKey, slot + 1);
+            const labelW = 112;
+            const dx = rightSide ? -130 : 18;
+            const baseDy = rightSide ? -28 : -24;
+            const dy = baseDy + (slot * 31) + ((point.driverIndex % 2) * 4);
+            const labelX = Math.max(margin.left + 4, Math.min(margin.left + plotW - labelW - 4, x + dx));
+            let labelY = Math.max(margin.top + 8, Math.min(axisY - 38, y + dy));
+            const overlapsPlaced = yPos => placedCalloutBoxes.some(box => (
+                labelX < box.x + box.w + 8 &&
+                labelX + labelW + 8 > box.x &&
+                yPos < box.y + box.h + 5 &&
+                yPos + 26 + 5 > box.y
+            ));
+            let guard = 0;
+            while (overlapsPlaced(labelY) && labelY < axisY - 38 && guard < 12) {
+                labelY = Math.min(axisY - 38, labelY + 31);
+                guard += 1;
+            }
+            while (overlapsPlaced(labelY) && labelY > margin.top + 8 && guard < 24) {
+                labelY = Math.max(margin.top + 8, labelY - 31);
+                guard += 1;
+            }
+            placedCalloutBoxes.push({ x: labelX, y: labelY, w: labelW, h: 26 });
+            return `<g class="rpe-callout">
+                <line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${labelX.toFixed(1)}" y2="${(labelY + 12).toFixed(1)}"></line>
+                <rect x="${labelX.toFixed(1)}" y="${labelY.toFixed(1)}" width="${labelW}" height="26" rx="4"></rect>
+                <text x="${(labelX + 8).toFixed(1)}" y="${(labelY + 17).toFixed(1)}">${esc(point.driver.code)} ${point.lapsUsed}/${point.totalLaps} laps</text>
+            </g>`;
         }).join('');
 
         const benchmarkText = payload.baselineLabel;
@@ -506,14 +537,14 @@
             <text class="rpe-subtitle" x="${margin.left}" y="109">${esc(subtitle)}</text>
             <text class="rpe-y-title" transform="translate(30 ${margin.top + plotH / 2}) rotate(-90)" text-anchor="middle">RACE PACE DELTA (%)</text>
             ${grid}
-            <line class="rpe-axis" x1="${margin.left}" y1="${margin.top + plotH}" x2="${margin.left + plotW}" y2="${margin.top + plotH}"></line>
+            <line class="rpe-axis" x1="${margin.left}" y1="${axisY}" x2="${margin.left + plotW}" y2="${axisY}"></line>
             ${medianSegments}
             ${driverLines}
             ${callouts}
             ${xAxis}
             <g class="rpe-legend">
-                <circle cx="${width / 2 - 92}" cy="${height - 30}" r="5"></circle>
-                <text x="${width / 2 - 74}" y="${height - 25}">MEDIAN RACE PACE</text>
+                <circle cx="${width / 2 - 92}" cy="${height - 32}" r="5"></circle>
+                <text x="${width / 2 - 74}" y="${height - 27}">MEDIAN RACE PACE</text>
             </g>
             <text class="rpe-footnote" x="${margin.left}" y="${height - 18}">${esc(benchmarkText)}</text>
         </svg>`;
