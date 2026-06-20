@@ -592,6 +592,9 @@
     const lapRaceSel = document.getElementById('lapDistRaceList');
     if (lapRaceSel && races.length) {
       const validRounds = new Set(races.map(r => String(r.round)));
+      if (endRoundSel && !validRounds.has(String(endRoundSel.value))) {
+        endRoundSel.value = String(races[races.length - 1].round);
+      }
       if (!validRounds.has(String(lapRaceSel.value))) {
         lapRaceSel.value = String(races[races.length - 1].round);
       }
