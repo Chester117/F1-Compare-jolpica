@@ -1,0 +1,10 @@
+{
+  "name": "f1-compare-jolpica",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node --check server.mjs && /System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc --ignoreUncaughtExceptions utils.js main.js history.js race.js raceProgress.js QualifyingTrendGraph.js lapDistribution.js"
+  }
+}

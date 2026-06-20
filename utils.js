@@ -208,6 +208,25 @@ function debugLog(...args) {
     }
 }
 
+function shouldUseLocalProxy(url) {
+    if (typeof window === 'undefined') return false;
+    try {
+        const parsed = new URL(url);
+        const hostname = window.location.hostname || '';
+        return parsed.protocol === 'https:' &&
+            parsed.hostname === 'api.jolpi.ca' &&
+            parsed.pathname.startsWith('/ergast/f1/') &&
+            hostname !== 'chester117.github.io' &&
+            !hostname.endsWith('.github.io');
+    } catch (_) {
+        return false;
+    }
+}
+
+function proxiedFetchUrl(url) {
+    return shouldUseLocalProxy(url) ? `/api/proxy?url=${encodeURIComponent(url)}` : url;
+}
+
 // 请求限制队列
 const requestQueue = [];
 let isProcessingQueue = false;
@@ -262,7 +281,8 @@ async function processQueue() {
         try {
             debugLog(`Fetching: ${url} (Attempt: ${retryCount + 1})`);
 
-            const response = await fetch(url, {
+            const requestUrl = proxiedFetchUrl(url);
+            const response = await fetch(requestUrl, {
                 headers: {
                     'Accept': 'application/json'
                 },

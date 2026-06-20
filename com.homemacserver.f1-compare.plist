@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.homemacserver.f1-compare</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/Codex.app/Contents/Resources/cua_node/bin/node</string>
+    <string>server.mjs</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/homemacserver/HomeMacServer/HomemacServerAutomation/F1Compare</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PORT</key>
+    <string>8811</string>
+    <key>HOST</key>
+    <string>127.0.0.1</string>
+    <key>PUBLIC_BASE_URL</key>
+    <string>https://compare.theflyinglapdamnu.top</string>
+    <key>DATA_DIR</key>
+    <string>/Users/homemacserver/HomeMacServer/HomemacServerAutomation/F1Compare/data</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/homemacserver/HomeMacServer/HomemacServerAutomation/F1Compare/logs/f1-compare.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/homemacserver/HomeMacServer/HomemacServerAutomation/F1Compare/logs/f1-compare.err.log</string>
+</dict>
+</plist>

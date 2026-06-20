@@ -184,6 +184,36 @@
         }
     }
 
+    function canUseLocalRaceProgressApi() {
+        if (typeof window === 'undefined') return false;
+        const hostname = window.location.hostname || '';
+        return hostname !== 'chester117.github.io' && !hostname.endsWith('.github.io');
+    }
+
+    async function tryBuildRaceProgressFromLocalApi({ year, constructorId, teamName, threshold, baselineStrategy, excludePit }) {
+        if (!canUseLocalRaceProgressApi()) return null;
+        const params = new URLSearchParams({
+            year,
+            constructorId,
+            teamName,
+            threshold,
+            baseline: baselineStrategy,
+            excludePit: String(excludePit)
+        });
+        const response = await fetch(`/api/race-progress?${params.toString()}`, {
+            headers: { Accept: 'application/json' },
+            signal: AbortSignal.timeout(180000)
+        });
+        if (!response.ok) {
+            throw new Error(`Local race progress API failed: ${response.status}`);
+        }
+        const body = await response.json();
+        if (!body?.payload?.races) {
+            throw new Error('Local race progress API returned an invalid payload');
+        }
+        return body;
+    }
+
     function parsePitStops(pitResp) {
         const byDriver = new Map();
         const stops = pitResp?.MRData?.RaceTable?.Races?.[0]?.PitStops || [];
@@ -564,6 +594,29 @@
 
         setStatus('正在加载赛历、正赛结果和圈速数据。首次生成会比较慢，之后会走本地缓存。', 'loading');
         setLoading('正在生成 Race Pace Evolution...');
+
+        try {
+            const localResult = await tryBuildRaceProgressFromLocalApi({
+                year,
+                constructorId,
+                teamName,
+                threshold,
+                baselineStrategy,
+                excludePit
+            });
+            if (localResult) {
+                renderChart(localResult.payload);
+                const latestRace = localResult.payload.races[localResult.payload.races.length - 1];
+                const points = localResult.payload.drivers.reduce((sum, driver) => sum + driver.points.filter(point => Number.isFinite(point.value)).length, 0);
+                const skippedText = localResult.payload.skipped?.length ? `跳过 ${localResult.payload.skipped.length} 站，详见服务端日志。` : '';
+                const latestText = latestRace ? `最新纳入：${latestRace.raceName} / ${latestRace.code}。` : '';
+                setStatus(`完成：${localResult.payload.races.length} 场比赛，${localResult.payload.drivers.length} 位车手，${points} 个车手走势点。${latestText}${skippedText}缓存：${localResult.cache}。`, 'ready');
+                return;
+            }
+        } catch (err) {
+            console.warn('[Race Progress] local API failed, falling back to browser calculation', err);
+            setStatus('本地缓存 API 暂不可用，正在回退到浏览器端计算。', 'loading');
+        }
 
         const [schedule, constructorResults, sprintSet] = await Promise.all([
             loadSchedule(year),
