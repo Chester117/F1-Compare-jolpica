@@ -16,6 +16,7 @@
     <script src="QualifyingTrendGraph.js?v=ui-refresh-1" defer></script>
     <script src="history.js?v=ui-refresh-1" defer></script>
     <script src="race.js?v=ui-refresh-1" defer></script>
+    <script src="raceProgress.js?v=race-progress-1" defer></script>
     <script src="lapDistribution.js?v=ui-refresh-1" defer></script>
     <script src="main.js?v=ui-refresh-1" defer></script>
 </head>
@@ -43,6 +44,7 @@
         <nav class="banner" aria-label="Comparison modes">
             <button class="tab-button active" type="button" data-tab="qualifying" onclick="switchTab('qualifying')">排位赛</button>
             <button class="tab-button" type="button" data-tab="race" onclick="switchTab('race')">正赛</button>
+            <button class="tab-button" type="button" data-tab="raceProgress" onclick="switchTab('raceProgress')">正赛走势</button>
             <button class="tab-button" type="button" data-tab="lapDistribution" onclick="switchTab('lapDistribution')">圈速图</button>
             <button class="tab-button" type="button" data-tab="history" onclick="switchTab('history')">队友历史</button>
             <button class="tab-button" type="button" data-tab="year" onclick="switchTab('year')">年份榜单</button>
@@ -158,6 +160,38 @@
             </div>
         </div>
     </section>
+    <section id="race-progress-content" class="view-panel" style="display: none;">
+        <div class="content-heading">
+            <span class="section-label">MODE 06</span>
+            <h2 class="flex-title">正赛走势</h2>
+        </div>
+        <div class="flex-container-options">
+            <select class="selector" id="raceProgressSeasonList" name="raceProgressSeasonList"></select>
+            <select class="selector" id="raceProgressConstructorList" name="raceProgressConstructorList"></select>
+            <select class="selector" id="raceProgressThreshold" title="过滤掉慢于个人最快有效圈的异常圈；默认 115%。">
+                <option value="none">No Filter</option>
+                <option value="1.10">110%</option>
+                <option value="1.15" selected>115%</option>
+                <option value="1.20">120%</option>
+                <option value="1.30">130%</option>
+            </select>
+            <select class="selector" id="raceProgressBaseline" title="0% 基准。推荐使用全场最快的个人中位正赛圈速。">
+                <option value="fastestMedian" selected>基准：全场最快中位</option>
+                <option value="winnerMedian">基准：冠军中位</option>
+                <option value="fieldMedian">基准：全场中位</option>
+            </select>
+            <label class="selector lap-tool-toggle" title="排除进站圈和出站圈。">
+                <input type="checkbox" id="raceProgressExcludePit" checked>
+                排除进站圈/出站圈
+            </label>
+            <button class="selector" id="raceProgressDownloadSvg" type="button">下载 SVG</button>
+            <button class="selector primary-action" id="raceProgressGo">生成走势图</button>
+        </div>
+        <div class="race-progress-meta" id="raceProgressMeta"></div>
+        <div class="race-progress-shell" id="raceProgressChart">
+            <div class="race-progress-empty">选择年份和车队后生成 Race Pace Evolution。</div>
+        </div>
+    </section>
     
     <!-- Partial data notice banner for long history fetches -->
     <div id="partialNotice" class="partial-notice" style="display:none;">
@@ -169,6 +203,7 @@
         const TAB_PANELS = {
             qualifying: 'qualifying-content',
             race:       'race-content',
+            raceProgress: 'race-progress-content',
             lapDistribution: 'lap-distribution-content',
             history:    'history-content',
             year:       'year-content'
@@ -197,6 +232,8 @@
                 window.initRaceTabFromSwitch();
             } else if (tab === 'lapDistribution' && typeof window.initLapDistributionTabFromSwitch === 'function') {
                 window.initLapDistributionTabFromSwitch();
+            } else if (tab === 'raceProgress' && typeof window.initRaceProgressTabFromSwitch === 'function') {
+                window.initRaceProgressTabFromSwitch();
             } else if (tab === 'year' && typeof window.initYearTabFromSwitch === 'function') {
                 window.initYearTabFromSwitch();
             }

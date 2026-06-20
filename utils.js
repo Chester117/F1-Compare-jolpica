@@ -398,11 +398,13 @@ function getCacheSummary() {
     const persistentFetchCache = getPersistentFetchCacheSummary();
     const historySummary = typeof window.getHistoryCacheSummary === 'function' ? window.getHistoryCacheSummary() : {};
     const raceSummary = typeof window.getRaceCacheSummary === 'function' ? window.getRaceCacheSummary() : {};
+    const raceProgressSummary = typeof window.getRaceProgressCacheSummary === 'function' ? window.getRaceProgressCacheSummary() : {};
     const summary = {
         fetchCacheSize,
         persistentFetchCache,
         history: historySummary,
-        race: raceSummary
+        race: raceSummary,
+        raceProgress: raceProgressSummary
     };
     console.log('[Cache] Summary', summary);
     return summary;
@@ -412,13 +414,17 @@ function flushAllCaches() {
     const result = {
         fetch: flushFetchCache(),
         history: null,
-        race: null
+        race: null,
+        raceProgress: null
     };
     if (typeof window.clearHistoryCaches === 'function') {
         result.history = window.clearHistoryCaches();
     }
     if (typeof window.clearRaceCaches === 'function') {
         result.race = window.clearRaceCaches();
+    }
+    if (typeof window.clearRaceProgressCaches === 'function') {
+        result.raceProgress = window.clearRaceProgressCaches();
     }
     console.log('[Cache] Flushed all caches', result);
     return result;
