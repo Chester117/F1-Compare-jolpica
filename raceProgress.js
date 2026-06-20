@@ -111,6 +111,21 @@
         }
     }
 
+    function ensureOption(select, value, label, attrs = {}) {
+        if (!select || value == null) return;
+        let option = Array.from(select.options || []).find(item => item.value === String(value));
+        if (!option) {
+            option = document.createElement('option');
+            option.value = String(value);
+            option.textContent = label || String(value);
+            select.appendChild(option);
+        }
+        Object.entries(attrs).forEach(([key, attrValue]) => {
+            option.dataset[key] = attrValue;
+        });
+        select.value = String(value);
+    }
+
     function driverCode(driver) {
         return driver?.code || (driver?.familyName || driver?.driverId || '').slice(0, 3).toUpperCase();
     }
@@ -773,6 +788,26 @@
         setStatus('选择年份和车队后点击生成走势图。', 'info');
     }
 
+    window.setRaceProgressContext = async function({ year, constructorId, teamName, threshold, baseline, excludePit } = {}) {
+        ensureOption(document.getElementById('raceProgressSeasonList'), year, year);
+        ensureOption(
+            document.getElementById('raceProgressConstructorList'),
+            constructorId,
+            teamName || constructorId,
+            { name: teamName || constructorId }
+        );
+        ensureOption(
+            document.getElementById('raceProgressThreshold'),
+            threshold || '1.15',
+            threshold === 'none' ? 'No Filter' : `${Math.round(Number(threshold || 1.15) * 100)}%`
+        );
+        const baselineSel = document.getElementById('raceProgressBaseline');
+        if (baselineSel && baseline) baselineSel.value = baseline;
+        const excludePitInput = document.getElementById('raceProgressExcludePit');
+        if (excludePitInput) excludePitInput.checked = excludePit !== false;
+    };
+
+    window.generateRaceProgressView = buildRaceProgress;
     window.getRaceProgressCacheSummary = function() {
         return { roundPaceCacheEntries: roundPaceCache.size };
     };

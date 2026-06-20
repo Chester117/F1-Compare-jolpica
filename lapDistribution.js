@@ -3,6 +3,7 @@
 (function() {
     let initialized = false;
     let currentSchedule = [];
+    let currentScheduleYear = '';
     let lastLoaded = null;
     let viewMode = 'violin';
 
@@ -32,6 +33,18 @@
 
     function escapeAttr(value) {
         return F1Utils.escapeHtml(String(value ?? ''));
+    }
+
+    function ensureOption(select, value, label) {
+        if (!select || value == null) return;
+        let option = Array.from(select.options || []).find(item => item.value === String(value));
+        if (!option) {
+            option = document.createElement('option');
+            option.value = String(value);
+            option.textContent = label || String(value);
+            select.appendChild(option);
+        }
+        select.value = String(value);
     }
 
     function percentile(values, p) {
@@ -114,6 +127,7 @@
         raceSel.innerHTML = '<option>加载比赛中...</option>';
         const schedule = await F1Utils.getSeasonSchedule(year);
         currentSchedule = schedule?.MRData?.RaceTable?.Races || [];
+        currentScheduleYear = String(year);
         raceSel.innerHTML = currentSchedule.map(r => {
             const label = `${r.round}. ${r.raceName}`;
             return `<option value="${escapeAttr(r.round)}">${escapeAttr(label)}</option>`;
@@ -512,5 +526,22 @@
         setStatus('选择比赛后点击生成圈速图。', 'info');
     }
 
+    window.setLapDistributionContext = async function({ year, round, filter } = {}) {
+        const seasonSel = document.getElementById('lapDistSeasonList');
+        const raceSel = document.getElementById('lapDistRaceList');
+        const filterSel = document.getElementById('lapDistFilter');
+        ensureOption(seasonSel, year, year);
+        if (year && String(seasonSel?.value) !== String(year)) seasonSel.value = String(year);
+        if (year && (!currentSchedule.length || currentScheduleYear !== String(year))) {
+            await fillRaceSelector(year);
+        }
+        if (round) {
+            const race = currentSchedule.find(item => String(item.round) === String(round));
+            ensureOption(raceSel, round, race ? `${race.round}. ${race.raceName}` : `Round ${round}`);
+        }
+        ensureOption(filterSel, filter || '1.15', filter === 'none' ? 'No Filter' : `${Math.round(Number(filter || 1.15) * 100)}%`);
+    };
+
+    window.generateLapDistributionView = generateLapDistribution;
     window.initLapDistributionTabFromSwitch = initLapDistributionTab;
 })();

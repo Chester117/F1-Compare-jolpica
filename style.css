@@ -880,6 +880,67 @@ input[type="checkbox"] {
     font-weight: 700;
 }
 
+.race-linked-controls {
+    display: none;
+}
+
+.race-subtabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 18px 0;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(8, 10, 14, 0.58);
+}
+
+.race-subtab {
+    min-height: 42px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.race-subtab:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.race-subtab.active {
+    color: #fff;
+    border-color: rgba(255, 45, 69, 0.78);
+    background: linear-gradient(135deg, var(--red), #b70f25);
+    box-shadow: 0 14px 30px rgba(255, 45, 69, 0.18);
+}
+
+.race-subpanel {
+    display: none;
+}
+
+.race-subpanel.active {
+    display: block;
+}
+
+.race-panel-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 0 0 14px;
+}
+
+.race-panel-toolbar .race-progress-meta,
+.race-panel-toolbar .lap-dist-meta {
+    flex: 1 1 320px;
+    margin: 0;
+}
+
 .race-note-shell {
     max-width: 1180px;
     margin: 12px auto 0;
@@ -1172,11 +1233,18 @@ tr:nth-child(even) td {
 }
 
 .summary-value-content {
+    align-items: baseline;
     color: inherit;
+    display: inline-flex;
+    gap: 10px;
+    justify-content: center;
+    width: 100%;
 }
 
 .summary-value .val-note {
     color: var(--muted);
+    font-size: 0.94em;
+    white-space: nowrap;
 }
 
 .quali-score {
@@ -1846,6 +1914,10 @@ button.selector:disabled,
     .race-filter-note {
         width: 100%;
         justify-content: center;
+    }
+
+    .race-subtabs {
+        grid-template-columns: 1fr;
     }
 
     .comparison-header-row,

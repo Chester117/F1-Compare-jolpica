@@ -260,21 +260,72 @@
     const btn = getRaceGoBtn();
     if (!btn) return;
     if (state === 'updating') {
-      btn.textContent = '更新中…';
+      btn.textContent = '分析中…';
       btn.disabled = true;
       return;
     }
     btn.disabled = false;
     if (hasRaceResults) {
-      btn.textContent = '刷新';
+      btn.textContent = '刷新全部';
     } else {
-      btn.textContent = 'Go';
+      btn.textContent = '分析全部';
     }
   }
 
   function markRaceDirty() {
     isDirtyRace = true;
     if (hasRaceResults) setRaceGoLabel('refresh');
+  }
+
+  function selectedRaceState() {
+    const year = document.getElementById('raceSeasonList')?.value;
+    const constructorSelect = document.getElementById('raceConstructorList');
+    const selectedConstructorOpt = constructorSelect?.options?.[constructorSelect.selectedIndex];
+    const startRound = document.getElementById('raceStartRound')?.value || '1';
+    const endRound = document.getElementById('raceEndRound')?.value || '1';
+    const lapRound = document.getElementById('lapDistRaceList')?.value || endRound || startRound;
+    return {
+      year,
+      constructorId: selectedConstructorOpt?.id || '',
+      constructorName: selectedConstructorOpt?.value || selectedConstructorOpt?.textContent || '',
+      threshold: document.getElementById('raceThreshold')?.value || '1.15',
+      baseline: document.getElementById('raceProgressBaseline')?.value || 'fastestMedian',
+      excludePit: document.getElementById('raceExcludePit')?.checked !== false,
+      lapRound
+    };
+  }
+
+  async function syncCompanionContexts() {
+    const state = selectedRaceState();
+    if (!state.year || !state.constructorId) return;
+    await window.setRaceProgressContext?.({
+      year: state.year,
+      constructorId: state.constructorId,
+      teamName: state.constructorName,
+      threshold: state.threshold,
+      baseline: state.baseline,
+      excludePit: state.excludePit
+    });
+    await window.setLapDistributionContext?.({
+      year: state.year,
+      round: state.lapRound,
+      filter: state.threshold
+    });
+  }
+
+  async function generateCompanionRaceViews() {
+    await syncCompanionContexts();
+    const jobs = [];
+    if (typeof window.generateRaceProgressView === 'function') {
+      jobs.push(window.generateRaceProgressView());
+    }
+    if (typeof window.generateLapDistributionView === 'function') {
+      jobs.push(window.generateLapDistributionView());
+    }
+    const results = await Promise.allSettled(jobs);
+    results.forEach(result => {
+      if (result.status === 'rejected') console.warn('[Race Workspace] companion view failed', result.reason);
+    });
   }
 
   async function fillRaceSelectors() {
@@ -316,12 +367,14 @@
 
       // update rounds for this year
       await populateRoundSelectors(year, startRoundSel, endRoundSel);
+      await syncCompanionContexts();
       // mark dirty if results already shown
       if (document.querySelector('#raceTables table')) markRaceDirty();
     });
 
     // constructor change should mark dirty
     constructorSel?.addEventListener('change', () => {
+      syncCompanionContexts();
       if (document.querySelector('#raceTables table')) markRaceDirty();
     });
 
@@ -333,6 +386,7 @@
       if (Number.isFinite(s) && Number.isFinite(e) && e < s) {
         endRoundSel.value = String(s);
       }
+      syncCompanionContexts();
       if (document.querySelector('#raceTables table')) markRaceDirty();
     });
     endRoundSel?.addEventListener('change', () => {
@@ -343,6 +397,7 @@
         // if user sets end < start, snap start down to end
         startRoundSel.value = String(e);
       }
+      syncCompanionContexts();
       if (document.querySelector('#raceTables table')) markRaceDirty();
     });
   }
@@ -364,6 +419,11 @@
       if (maxRound > 0) {
         startRoundSel.value = '1';
         endRoundSel.value = String(maxRound);
+      }
+      const lapRaceSel = document.getElementById('lapDistRaceList');
+      if (lapRaceSel) {
+        lapRaceSel.innerHTML = races.map(r => `<option value="${r.round}">${r.round}. ${r.raceName}</option>`).join('');
+        if (maxRound > 0) lapRaceSel.value = String(maxRound);
       }
     } catch (e) {
       console.warn('Failed to populate round selectors for year', year, e);
@@ -529,6 +589,13 @@
       const rd = parseInt(r.round, 10);
       return (!Number.isFinite(startRound) || rd >= startRound) && (!Number.isFinite(endRound) || rd <= endRound);
     });
+    const lapRaceSel = document.getElementById('lapDistRaceList');
+    if (lapRaceSel && races.length) {
+      const validRounds = new Set(races.map(r => String(r.round)));
+      if (!validRounds.has(String(lapRaceSel.value))) {
+        lapRaceSel.value = String(races[races.length - 1].round);
+      }
+    }
 
     // Group selected races by teammate pair
     const pairGroups = new Map(); // key: sortedId1|sortedId2 -> {id1,id2,name1,name2,races: []}
@@ -802,10 +869,20 @@
     }
   }
 
-  function initRaceTab() {
+  async function initRaceTab() {
     if (raceTabInitialized) return;
-    fillRaceSelectors();
+    raceTabInitialized = true;
     const goBtn = document.getElementById('raceGo');
+    if (goBtn) {
+      goBtn.disabled = true;
+      goBtn.textContent = '初始化中...';
+    }
+    await Promise.allSettled([
+      window.initRaceProgressTabFromSwitch?.(),
+      window.initLapDistributionTabFromSwitch?.()
+    ]);
+    await fillRaceSelectors();
+    await syncCompanionContexts();
     if (goBtn) {
       goBtn.addEventListener('click', async () => {
         if (isUpdatingRace) return;
@@ -816,6 +893,7 @@
         raceTables.innerHTML = '<div class="loading-text">更新中…</div>';
         try {
           await showRaceResults({ refresh: hasRaceResults });
+          await generateCompanionRaceViews();
           hasRaceResults = true;
           isDirtyRace = false;
         } finally {
@@ -823,17 +901,29 @@
           setRaceGoLabel(hasRaceResults ? 'refresh' : 'go');
         }
       });
+      setRaceGoLabel();
     }
     // re-run when filters change if already loaded
     const thresholdSel = document.getElementById('raceThreshold');
     const excludePit = document.getElementById('raceExcludePit');
+    const baselineSel = document.getElementById('raceProgressBaseline');
+    const lapRaceSel = document.getElementById('lapDistRaceList');
     thresholdSel?.addEventListener('change', () => {
+      syncCompanionContexts();
       if (document.querySelector('#raceTables table')) markRaceDirty();
     });
     excludePit?.addEventListener('change', () => {
+      syncCompanionContexts();
       if (document.querySelector('#raceTables table')) markRaceDirty();
     });
-    raceTabInitialized = true;
+    baselineSel?.addEventListener('change', () => {
+      syncCompanionContexts();
+      if (document.querySelector('#raceTables table')) markRaceDirty();
+    });
+    lapRaceSel?.addEventListener('change', () => {
+      syncCompanionContexts();
+      if (document.querySelector('#raceTables table')) markRaceDirty();
+    });
   }
 
   // 暴露初始化函数给 index.html 中统一的 switchTab 调用

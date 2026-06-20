@@ -252,15 +252,12 @@ function displayMedianResults(currentTable) {
     const wrapCenteredWithNote = (centerText, noteText) => {
         const wrapper = document.createElement('div');
         wrapper.className = 'summary-value-content';
-        const left = document.createElement('span');
-        left.className = 'val-left';
         const center = document.createElement('span');
         center.className = 'val-center';
         center.textContent = centerText;
         const note = document.createElement('span');
         note.className = 'val-note';
         note.textContent = noteText;
-        wrapper.appendChild(left);
         wrapper.appendChild(center);
         wrapper.appendChild(note);
         return wrapper;
